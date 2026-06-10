@@ -5,18 +5,18 @@
       <stop offset="1" stop-color="#6d3df0"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" fill="#0a0b10"/>
-  <rect x="51" y="51" width="410" height="410" rx="90" fill="url(#bg)"/>
-  <g fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" transform="translate(256,256)">
-    <rect x="-62" y="-62" width="124" height="124" rx="10"/>
-    <rect x="-26" y="-26" width="52" height="52" rx="5"/>
-    <line x1="-31" y1="-62" x2="-31" y2="-86"/>
-    <line x1="31"  y1="-62" x2="31"  y2="-86"/>
-    <line x1="-31" y1="62"  x2="-31" y2="86"/>
-    <line x1="31"  y1="62"  x2="31"  y2="86"/>
-    <line x1="-62" y1="-31" x2="-86" y2="-31"/>
-    <line x1="-62" y1="31"  x2="-86" y2="31"/>
-    <line x1="62"  y1="-31" x2="86"  y2="-31"/>
-    <line x1="62"  y1="31"  x2="86"  y2="31"/>
-  </g>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <path d="
+    M 196 110 L 340 110 L 340 152 L 286 152 L 286 318
+    C 286 350 279 374 265 390
+    C 251 406 230 414 204 414
+    C 178 414 158 407 144 393
+    C 130 379 122 360 120 336
+    L 170 328
+    C 172 344 176 354 183 362
+    C 190 370 199 374 210 374
+    C 222 374 231 368 237 358
+    C 243 348 246 332 246 310
+    L 246 152 L 196 152 Z
+  " fill="#fff"/>
 </svg>

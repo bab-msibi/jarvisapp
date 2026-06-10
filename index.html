@@ -24,12 +24,11 @@
   html, body { margin: 0; padding: 0; height: 100%; }
   body {
     font-family: -apple-system, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
-    background: #050507;
-    background-image: radial-gradient(1200px 800px at 50% -10%, rgba(var(--accent-rgb), 0.10), transparent 60%);
-    display: flex; align-items: center; justify-content: center;
-    min-height: 100vh; overflow: hidden;
+    background: #0a0b10;
+    margin: 0; padding: 0;
+    min-height: 100vh; min-height: 100dvh; overflow: hidden;
   }
-  #root { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  #root { width: 100%; height: 100vh; height: 100dvh; }
 
   .device[data-theme="dark"] {
     --bg: #0a0b10;
@@ -71,41 +70,19 @@
   .device { --ok: #34d399; --ok-soft: rgba(52,211,153,0.16); --warn: #fbbf24; --warn-soft: rgba(251,191,36,0.16);
             --err: #fb6f70; --err-soft: rgba(251,111,112,0.16); --info: var(--accent); --purple: #a779ff; --cyan: #3dd9c9; }
 
-  .stage { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; }
-  .bezel {
-    position: relative; border-radius: 56px; padding: 13px;
-    background: linear-gradient(160deg, #2a2c34, #0c0d11 60%);
-    box-shadow: 0 50px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06), inset 0 0 0 1.5px rgba(255,255,255,0.05);
-  }
   .device {
-    position: relative; width: 390px; height: 844px; border-radius: 44px; overflow: hidden;
+    position: relative; width: 100%; height: 100vh; height: 100dvh; overflow: hidden;
     background: var(--bg);
-    background-image: radial-gradient(900px 540px at 50% -8%, var(--bg-grad-1), transparent 55%),
-                      radial-gradient(700px 520px at 100% 8%, var(--bg-grad-2), transparent 50%);
     color: var(--text);
     display: flex; flex-direction: column;
     transition: background-color .4s ease, color .3s ease;
+    padding-top: env(safe-area-inset-top, 0px);
   }
-  .island {
-    position: absolute; top: 11px; left: 50%; transform: translateX(-50%);
-    width: 120px; height: 35px; border-radius: 20px; background: #000; z-index: 200;
-  }
-
-  .statusbar {
-    height: 54px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-    padding: 0 30px 0 34px; position: relative; z-index: 150; pointer-events: none;
-  }
-  .statusbar .time { font-size: 15px; font-weight: 640; letter-spacing: 0.2px; color: var(--statusbar); padding-top: 8px; }
-  .statusbar .glyphs { display: flex; align-items: center; gap: 7px; padding-top: 8px; }
-  .statusbar svg path, .statusbar svg rect { fill: var(--statusbar); }
 
   .screen { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; -webkit-overflow-scrolling: touch; }
   .screen::-webkit-scrollbar { width: 0; display: none; }
   .pad { padding: 0 18px; }
-  .pad-b { padding-bottom: 116px; }
-
-  .home-ind { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); width: 134px; height: 5px;
-    border-radius: 100px; background: var(--text); opacity: 0.32; z-index: 250; pointer-events: none; }
+  .pad-b { padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
 
   .glass { background: var(--surface); backdrop-filter: blur(var(--glass-blur)) saturate(160%);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%); border: 1px solid var(--border); }
@@ -368,7 +345,7 @@ function Btn({ children, onClick, variant = "primary", icon, full, size = "md", 
   const base = { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: pad, fontSize: fs, fontWeight: 640,
     borderRadius: 15, width: full ? "100%" : undefined, letterSpacing: -0.1, opacity: disabled ? 0.5 : 1, ...style };
   const variants = {
-    primary: { background: "var(--accent)", color: "#fff", boxShadow: "0 8px 22px rgba(var(--accent-rgb),0.34)" },
+    primary: { background: "var(--accent)", color: "#fff" },
     solid: { background: "var(--text)", color: "var(--bg)" },
     glass: { background: "var(--surface-2)", color: "var(--text)", border: "1px solid var(--border)" },
     ghost: { background: "transparent", color: "var(--text-dim)" },
@@ -520,8 +497,8 @@ function Field({ icon, label, value, onChange, type = "text", placeholder, right
 function Logo({ size = 60 }) {
   return (
     <div style={{ width: size, height: size, borderRadius: size * 0.3, background: "linear-gradient(150deg,#5b8cff,#6d3df0)", display: "flex", alignItems: "center", justifyContent: "center",
-      boxShadow: "0 14px 40px rgba(91,140,255,0.45), inset 0 0 0 1px rgba(255,255,255,0.2)", position: "relative" }}>
-      <Icon name="chip" size={size * 0.5} stroke={1.8} style={{ color: "#fff" }} />
+      position: "relative" }}>
+      <span style={{ color: "#fff", fontSize: size * 0.52, fontWeight: 800, letterSpacing: -1, lineHeight: 1 }}>J</span>
     </div>
   );
 }
@@ -1099,7 +1076,7 @@ function AgentChat({ nav }) {
           );
           if (m.from === "user") return (
             <div key={m.id} style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-              <div style={{ maxWidth: "78%", background: "var(--accent)", color: "#fff", padding: "11px 14px", borderRadius: "16px 16px 4px 16px", fontSize: 14, lineHeight: 1.45, boxShadow: "0 4px 14px rgba(var(--accent-rgb),0.3)" }}>{m.text}</div>
+              <div style={{ maxWidth: "78%", background: "var(--accent)", color: "#fff", padding: "11px 14px", borderRadius: "16px 16px 4px 16px", fontSize: 14, lineHeight: 1.45, }}>{m.text}</div>
             </div>
           );
           return (
@@ -1132,7 +1109,7 @@ function AgentChat({ nav }) {
         <div className="glass" style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 6px 6px 16px", borderRadius: 24 }}>
           <input placeholder={`Message ${a.name}…`} style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: 14.5, fontFamily: "inherit" }} />
           <button className="tap" style={{ width: 36, height: 36, borderRadius: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)" }}><Icon name="mic" size={19} /></button>
-          <button className="tap" style={{ width: 38, height: 38, borderRadius: 38, background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 12px rgba(var(--accent-rgb),0.4)" }}><Icon name="send" size={18} /></button>
+          <button className="tap" style={{ width: 38, height: 38, borderRadius: 38, background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", }}><Icon name="send" size={18} /></button>
         </div>
       </div>
       <Sheet open={sheet === "controls"} onClose={() => setSheet(null)} title="Agent controls">
@@ -1761,8 +1738,8 @@ function renderOverlay(screen, nav) {
 
 function BottomNav({ tab, onTab }) {
   return (
-    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 100, padding: "0 12px 22px" }}>
-      <div className="glass" style={{ display: "flex", borderRadius: 26, padding: "9px 6px 8px", boxShadow: "var(--shadow)" }}>
+    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 100, padding: "0 12px calc(10px + env(safe-area-inset-bottom, 12px))" }}>
+      <div className="glass" style={{ display: "flex", borderRadius: 26, padding: "9px 6px 8px" }}>
         {TABS.map(t => {
           const on = tab === t.id;
           return (
@@ -1787,7 +1764,6 @@ function App() {
   const [dark, setDark] = useState(() => { try { const s = localStorage.getItem("ac_dark"); return s === null ? true : s === "1"; } catch { return true; } });
   const applyDark = (v) => { setDark(v); try { localStorage.setItem("ac_dark", v ? "1" : "0"); } catch {} };
   const deviceRef = useRef(null);
-  const [scale, setScale] = useState(1);
   const [accent, setAccent] = useState("#5b8cff");
 
   useEffect(() => { localStorage.setItem("ac_nav", JSON.stringify({ mode, tab })); }, [mode, tab]);
@@ -1799,15 +1775,6 @@ function App() {
     document.documentElement.style.setProperty("--accent", accent);
     document.documentElement.style.setProperty("--accent-rgb", hexToRgb(accent));
   }, [accent, mode, tab, stack]);
-
-  useEffect(() => {
-    const fit = () => {
-      const bw = 416, bh = 870;
-      const s = Math.min(1, (window.innerWidth - 24) / bw, (window.innerHeight - 24) / bh);
-      setScale(s);
-    };
-    fit(); window.addEventListener("resize", fit); return () => window.removeEventListener("resize", fit);
-  }, []);
 
   const theme = dark ? "dark" : "light";
   const setTheme = m => applyDark(m === "dark");
@@ -1833,29 +1800,20 @@ function App() {
   const overlay = stack.length ? stack[stack.length - 1] : null;
 
   return (
-    <div className="stage">
-      <div className="bezel" style={{ transform: `scale(${scale})` }}>
-        <div className="device" data-theme={theme} ref={deviceRef}>
-          <div className="island" />
-          <StatusBar />
-
-          {mode === "login" && <LoginScreen nav={nav} />}
-          {mode === "onboarding" && <OnboardingScreen nav={nav} />}
-          {mode === "app" && <>
-            <div style={{ position: "absolute", inset: 0, top: 54, display: stack.length ? "none" : "flex", flexDirection: "column" }}>
-              {tab === "settings" ? <Settings nav={nav} theme={theme} setTheme={setTheme} /> : <TabScreen nav={nav} />}
-            </div>
-            {overlay && (
-              <div key={stack.length} style={{ position: "absolute", inset: 0, top: 54, background: "var(--bg)", backgroundImage: "radial-gradient(900px 540px at 50% -8%, var(--bg-grad-1), transparent 55%)", display: "flex", flexDirection: "column", zIndex: 60 }}>
-                {renderOverlay(overlay.screen, nav)}
-              </div>
-            )}
-            {!stack.length && <BottomNav tab={tab} onTab={nav.go} />}
-          </>}
-
-          <div className="home-ind" />
+    <div className="device" data-theme={theme} ref={deviceRef}>
+      {mode === "login" && <LoginScreen nav={nav} />}
+      {mode === "onboarding" && <OnboardingScreen nav={nav} />}
+      {mode === "app" && <>
+        <div style={{ position: "absolute", inset: 0, display: stack.length ? "none" : "flex", flexDirection: "column", paddingTop: "env(safe-area-inset-top, 0px)" }}>
+          {tab === "settings" ? <Settings nav={nav} theme={theme} setTheme={setTheme} /> : <TabScreen nav={nav} />}
         </div>
-      </div>
+        {overlay && (
+          <div key={stack.length} style={{ position: "absolute", inset: 0, paddingTop: "env(safe-area-inset-top, 0px)", background: "var(--bg)", display: "flex", flexDirection: "column", zIndex: 60 }}>
+            {renderOverlay(overlay.screen, nav)}
+          </div>
+        )}
+        {!stack.length && <BottomNav tab={tab} onTab={nav.go} />}
+      </>}
     </div>
   );
 }

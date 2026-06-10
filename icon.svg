@@ -6,16 +6,29 @@
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <g fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" transform="translate(256,256)">
-    <rect x="-72" y="-72" width="144" height="144" rx="12"/>
-    <rect x="-30" y="-30" width="60" height="60" rx="6"/>
-    <line x1="-36" y1="-72" x2="-36" y2="-100"/>
-    <line x1="36"  y1="-72" x2="36"  y2="-100"/>
-    <line x1="-36" y1="72"  x2="-36" y2="100"/>
-    <line x1="36"  y1="72"  x2="36"  y2="100"/>
-    <line x1="-72" y1="-36" x2="-100" y2="-36"/>
-    <line x1="-72" y1="36"  x2="-100" y2="36"/>
-    <line x1="72"  y1="-36" x2="100"  y2="-36"/>
-    <line x1="72"  y1="36"  x2="100"  y2="36"/>
-  </g>
+  <!-- Bold J as path -->
+  <path d="
+    M 196 90 L 356 90 L 356 138 L 296 138 L 296 320
+    C 296 356 288 382 272 400
+    C 256 418 232 428 200 428
+    C 172 428 150 420 134 404
+    C 118 388 110 366 108 338
+    L 164 330
+    C 166 348 170 360 178 368
+    C 186 376 196 380 208 380
+    C 222 380 232 374 238 362
+    C 244 350 248 332 248 308
+    L 248 138 L 196 138 Z
+  " fill="#fff"/>
+  <!-- Drip 1 from bottom of J hook -->
+  <ellipse cx="200" cy="444" rx="16" ry="18" fill="#fff" opacity="0.9"/>
+  <ellipse cx="200" cy="470" rx="10" ry="11" fill="#fff" opacity="0.6"/>
+  <ellipse cx="200" cy="490" rx="6" ry="6" fill="#fff" opacity="0.35"/>
+  <!-- Drip 2 from right serif -->
+  <ellipse cx="340" cy="152" rx="12" ry="14" fill="#fff" opacity="0.8"/>
+  <ellipse cx="340" cy="174" rx="8" ry="9" fill="#fff" opacity="0.5"/>
+  <ellipse cx="340" cy="190" rx="5" ry="5" fill="#fff" opacity="0.3"/>
+  <!-- Drip 3 from left side of J curve -->
+  <ellipse cx="118" cy="368" rx="10" ry="12" fill="#fff" opacity="0.65"/>
+  <ellipse cx="118" cy="388" rx="6" ry="7" fill="#fff" opacity="0.4"/>
 </svg>
