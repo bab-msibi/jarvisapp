@@ -1132,22 +1132,118 @@ function SessionRow({ s }) {
   );
 }
 
+// ── Chat history helpers ────────────────────────────────────────────────────
+function chatHistoryKey(agentId) { return "jarvis:chat:" + agentId; }
+
+function loadChatHistory(agentId) {
+  try { return JSON.parse(localStorage.getItem(chatHistoryKey(agentId)) || "[]"); } catch { return []; }
+}
+
+function saveChatHistory(agentId, sessions) {
+  try { localStorage.setItem(chatHistoryKey(agentId), JSON.stringify(sessions.slice(-50))); } catch {}
+}
+
+function newChatSession(agentId) {
+  return { id: "jarvisapp-" + Date.now().toString(36), agentId, createdAt: Date.now(), messages: [] };
+}
+
+// ── Chat history list view ──────────────────────────────────────────────────
+function ChatHistory({ agent, sessions, onSelect, onNew, onClose }) {
+  return (
+    <div className="screen anim-screen" style={{ display: "flex", flexDirection: "column" }}>
+      <Header title="Chat History" sub={agent.name} left={<GhostBtn icon="chevL" onClick={onClose} />}
+        right={
+          <button className="tap" onClick={onNew}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 100,
+              background: "var(--accent)", color: "#fff", fontSize: 13, fontWeight: 660 }}>
+            <Icon name="plus" size={14} stroke={2.5} />New Chat
+          </button>
+        }
+      />
+      <div className="pad" style={{ flex: 1, overflowY: "auto" }}>
+        {sessions.length === 0 && (
+          <div style={{ textAlign: "center", padding: 48, color: "var(--text-ghost)", fontSize: 14 }}>
+            No previous chats. Start one!
+          </div>
+        )}
+        {sessions.slice().reverse().map(function(s) {
+          const preview = s.messages.length ? s.messages[s.messages.length - 1].text.slice(0, 80) : "Empty chat";
+          const dateStr = new Date(s.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+          return (
+            <button key={s.id} className="tap card" onClick={function() { onSelect(s); }}
+              style={{ width: "100%", textAlign: "left", padding: "14px 16px", marginBottom: 10, display: "block" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                <span style={{ fontSize: 12, color: "var(--text-ghost)" }}>{dateStr}</span>
+                <span style={{ fontSize: 11, color: "var(--text-ghost)", background: "var(--surface-2)", borderRadius: 100, padding: "2px 8px" }}>
+                  {s.messages.length} msg{s.messages.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div style={{ fontSize: 13.5, color: "var(--text-dim)", lineHeight: 1.4 }} className="clip">{preview}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Main AgentChat ──────────────────────────────────────────────────────────
 function AgentChat({ agent, onClose }) {
   const d = useData();
   const models = d?.models || [];
-  const [messages, setMessages] = useState([]);
+
+  // Chat sessions persisted to localStorage
+  const [sessions, setSessions] = useState(function() { return loadChatHistory(agent.id); });
+  const [activeSession, setActiveSession] = useState(function() {
+    const hist = loadChatHistory(agent.id);
+    return hist.length ? hist[hist.length - 1] : newChatSession(agent.id);
+  });
+  const [showHistory, setShowHistory] = useState(false);
+
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [model, setModel] = useState(agent.model || "");
   const [showModelPicker, setShowModelPicker] = useState(false);
-  const sessionKey = useRef("agent:" + agent.id + ":jarvisapp-" + Math.random().toString(36).slice(2, 8));
+  const sessionKeyRef = useRef("agent:" + agent.id + ":" + (activeSession.id));
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
+  // Keep sessionKey in sync when active session changes
+  useEffect(function() {
+    sessionKeyRef.current = "agent:" + agent.id + ":" + activeSession.id;
+    setError(null);
+  }, [activeSession.id]);
+
   useEffect(function() {
     if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sending]);
+  }, [activeSession.messages, sending]);
+
+  function persistSession(updated) {
+    setSessions(function(prev) {
+      const idx = prev.findIndex(function(s) { return s.id === updated.id; });
+      var next;
+      if (idx >= 0) { next = prev.slice(); next[idx] = updated; }
+      else { next = prev.concat(updated); }
+      saveChatHistory(agent.id, next);
+      return next;
+    });
+  }
+
+  function startNewChat() {
+    const s = newChatSession(agent.id);
+    setActiveSession(s);
+    setShowHistory(false);
+    setError(null);
+    setInput("");
+  }
+
+  function openSession(s) {
+    setActiveSession(s);
+    setShowHistory(false);
+    setError(null);
+    setInput("");
+  }
 
   function send() {
     const text = input.trim();
@@ -1155,28 +1251,31 @@ function AgentChat({ agent, onClose }) {
     setInput("");
     setError(null);
     const userMsg = { role: "user", text, id: Date.now() };
-    setMessages(function(prev) { return prev.concat(userMsg); });
+    const updated = Object.assign({}, activeSession, { messages: activeSession.messages.concat(userMsg) });
+    setActiveSession(updated);
+    persistSession(updated);
     setSending(true);
 
     fetch("/api/agent/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agentId: agent.id, message: text, model: model || undefined, sessionKey: sessionKey.current }),
+      body: JSON.stringify({ agentId: agent.id, message: text, model: model || undefined, sessionKey: sessionKeyRef.current }),
     })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         setSending(false);
-        if (data.error) {
-          setError(data.error);
-          return;
-        }
-        // Extract reply text from various response shapes
+        if (data.error) { setError(data.error); return; }
         const reply = data.reply || data.response || data.content || data.text
           || (data.output && (data.output.text || data.output.content))
           || JSON.stringify(data);
-        setMessages(function(prev) { return prev.concat({ role: "agent", text: reply, id: Date.now() + 1 }); });
+        const agentMsg = { role: "agent", text: reply, id: Date.now() + 1 };
+        setActiveSession(function(prev) {
+          const next = Object.assign({}, prev, { messages: prev.messages.concat(agentMsg) });
+          persistSession(next);
+          return next;
+        });
       })
-      .catch(function(e) {
+      .catch(function() {
         setSending(false);
         setError("Network error — is the server running?");
       });
@@ -1186,7 +1285,12 @@ function AgentChat({ agent, onClose }) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   }
 
+  if (showHistory) {
+    return <ChatHistory agent={agent} sessions={sessions} onSelect={openSession} onNew={startNewChat} onClose={function() { setShowHistory(false); }} />;
+  }
+
   const allModels = models.length ? models : [{ id: agent.model, name: agent.model }];
+  const messages = activeSession.messages;
 
   return (
     <div className="screen anim-screen" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -1196,25 +1300,43 @@ function AgentChat({ agent, onClose }) {
         sub={<span className="mono" style={{ fontSize: 11 }}>{model || agent.model}</span>}
         left={<GhostBtn icon="chevL" onClick={onClose} />}
         right={
-          <button className="tap" onClick={() => setShowModelPicker(p => !p)}
-            style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 100,
-              background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--text-dim)" }}>
-            <Icon name="brain" size={13} stroke={2} />
-            Model
-            <Icon name="chevD" size={12} stroke={2.5} />
-          </button>
+          <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+            <button className="tap" onClick={function() { setShowHistory(true); }}
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 100,
+                background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--text-dim)" }}>
+              <Icon name="clock" size={13} stroke={2} />
+              History
+            </button>
+            <button className="tap" onClick={startNewChat}
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 100,
+                background: "var(--accent)", color: "#fff", fontSize: 12, fontWeight: 660, border: "none" }}>
+              <Icon name="plus" size={13} stroke={2.5} />
+              New
+            </button>
+          </div>
         }
       />
+
+      {/* Model picker toggle */}
+      <div style={{ padding: "0 18px 10px" }}>
+        <button className="tap" onClick={function() { setShowModelPicker(function(p) { return !p; }); }}
+          style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 100,
+            background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--text-dim)" }}>
+          <Icon name="brain" size={13} stroke={2} />
+          {model || agent.model}
+          <Icon name="chevD" size={12} stroke={2.5} />
+        </button>
+      </div>
 
       {/* Model picker dropdown */}
       {showModelPicker && (
         <div style={{ margin: "0 18px 12px", padding: "10px 0", background: "var(--surface)", borderRadius: 14, border: "1px solid var(--border)" }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-ghost)", padding: "0 14px 8px" }}>SELECT MODEL</div>
-          {allModels.map(m => {
+          {allModels.map(function(m) {
             const mid = m.id || m.name;
             const active = (model || agent.model) === mid;
             return (
-              <button key={mid} className="tap" onClick={() => { setModel(mid); setShowModelPicker(false); }}
+              <button key={mid} className="tap" onClick={function() { setModel(mid); setShowModelPicker(false); }}
                 style={{ width: "100%", textAlign: "left", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
                   background: active ? "rgba(91,140,255,0.1)" : "transparent" }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: active ? "var(--accent)" : "var(--surface-2)", flexShrink: 0 }} />
@@ -1243,47 +1365,50 @@ function AgentChat({ agent, onClose }) {
               Send a message to start a conversation.
             </div>
           </div>
-          {/* Quick starters */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 8 }}>
-            {["What can you help me with?", "Summarise recent activity", "What's in my workspace?"].map(q => (
-              <button key={q} className="tap" onClick={() => { setInput(q); inputRef.current?.focus(); }}
-                style={{ padding: "8px 14px", borderRadius: 100, fontSize: 12.5, fontWeight: 560,
-                  background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-dim)" }}>
-                {q}
-              </button>
-            ))}
+            {["What can you help me with?", "Summarise recent activity", "What's in my workspace?"].map(function(q) {
+              return (
+                <button key={q} className="tap" onClick={function() { setInput(q); if (inputRef.current) inputRef.current.focus(); }}
+                  style={{ padding: "8px 14px", borderRadius: 100, fontSize: 12.5, fontWeight: 560,
+                    background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-dim)" }}>
+                  {q}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Messages */}
-      {messages.length > 0 && (
+      {(messages.length > 0 || sending) && (
         <div style={{ flex: 1, overflowY: "auto", padding: "0 18px", display: "flex", flexDirection: "column", gap: 12 }}>
-          {messages.map(msg => (
-            <div key={msg.id} style={{ display: "flex", flexDirection: msg.role === "user" ? "row-reverse" : "row", gap: 10, alignItems: "flex-end" }}>
-              {msg.role === "agent" && (
-                <div style={{ flexShrink: 0, marginBottom: 2 }}>
-                  <AgentEmoji emoji={agent.emoji} name={agent.name} color={agent.color} size={28} />
+          {messages.map(function(msg) {
+            return (
+              <div key={msg.id} style={{ display: "flex", flexDirection: msg.role === "user" ? "row-reverse" : "row", gap: 10, alignItems: "flex-end" }}>
+                {msg.role === "agent" && (
+                  <div style={{ flexShrink: 0, marginBottom: 2 }}>
+                    <AgentEmoji emoji={agent.emoji} name={agent.name} color={agent.color} size={28} />
+                  </div>
+                )}
+                <div style={{
+                  maxWidth: "78%", padding: "10px 14px", borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                  background: msg.role === "user" ? "var(--accent)" : "var(--surface)",
+                  color: msg.role === "user" ? "#fff" : "var(--text)",
+                  fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                }}>
+                  {msg.text}
                 </div>
-              )}
-              <div style={{
-                maxWidth: "78%", padding: "10px 14px", borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                background: msg.role === "user" ? "var(--accent)" : "var(--surface)",
-                color: msg.role === "user" ? "#fff" : "var(--text)",
-                fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
-              }}>
-                {msg.text}
               </div>
-            </div>
-          ))}
+            );
+          })}
           {sending && (
             <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
               <AgentEmoji emoji={agent.emoji} name={agent.name} color={agent.color} size={28} />
               <div style={{ padding: "12px 16px", borderRadius: "18px 18px 18px 4px", background: "var(--surface)", display: "flex", gap: 5, alignItems: "center" }}>
-                {[0,1,2].map(i => (
-                  <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--text-ghost)",
-                    animation: `pulse 1.2s ease-in-out ${i*0.2}s infinite` }} />
-                ))}
+                {[0,1,2].map(function(i) {
+                  return <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--text-ghost)",
+                    animation: "pulse 1.2s ease-in-out " + (i*0.2) + "s infinite" }} />;
+                })}
               </div>
             </div>
           )}
@@ -1301,8 +1426,8 @@ function AgentChat({ agent, onClose }) {
       {/* Input bar */}
       <div style={{ padding: "12px 18px 20px", borderTop: messages.length ? "1px solid var(--border)" : "none", background: "var(--bg)" }}>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "var(--surface)", borderRadius: 20, padding: "8px 8px 8px 16px", border: "1px solid var(--border-strong)" }}>
-          <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKey}
-            placeholder="Message Admore…" rows={1}
+          <textarea ref={inputRef} value={input} onChange={function(e) { setInput(e.target.value); }} onKeyDown={handleKey}
+            placeholder={"Message " + agent.name + "…"} rows={1}
             style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: 14.5,
               fontFamily: "inherit", resize: "none", maxHeight: 120, lineHeight: 1.5, paddingTop: 2 }} />
           <button className="tap" onClick={send} disabled={!input.trim() || sending}
