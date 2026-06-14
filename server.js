@@ -272,11 +272,11 @@ async function handlePost(pathname, body) {
 
     const args = ["agent", "--agent", agentId, "--message", message, "--json"];
     if (sessionKey) args.push("--session-key", sessionKey);
-    if (model) args.push("--model", model);
+    // Model override is controlled by agent config — do not pass --model
 
     try {
       const { stdout, stderr } = await execFileAsync(OPENCLAW, args, {
-        timeout: 120000,
+        timeout: 240000,
         maxBuffer: 1024 * 1024 * 4,
       });
       // openclaw agent --json outputs a JSON object on success

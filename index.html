@@ -1203,8 +1203,6 @@ function AgentChat({ agent, onClose }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
-  const [model, setModel] = useState(agent.model || "");
-  const [showModelPicker, setShowModelPicker] = useState(false);
   const sessionKeyRef = useRef("agent:" + agent.id + ":" + (activeSession.id));
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
@@ -1259,7 +1257,7 @@ function AgentChat({ agent, onClose }) {
     fetch("/api/agent/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agentId: agent.id, message: text, model: model || undefined, sessionKey: sessionKeyRef.current }),
+      body: JSON.stringify({ agentId: agent.id, message: text, sessionKey: sessionKeyRef.current }),
     })
       .then(function(r) { return r.json(); })
       .then(function(data) {
@@ -1289,7 +1287,6 @@ function AgentChat({ agent, onClose }) {
     return <ChatHistory agent={agent} sessions={sessions} onSelect={openSession} onNew={startNewChat} onClose={function() { setShowHistory(false); }} />;
   }
 
-  const allModels = models.length ? models : [{ id: agent.model, name: agent.model }];
   const messages = activeSession.messages;
 
   return (
@@ -1317,42 +1314,14 @@ function AgentChat({ agent, onClose }) {
         }
       />
 
-      {/* Model picker toggle */}
+      {/* Model badge — read only, model is set in agent config */}
       <div style={{ padding: "0 18px 10px" }}>
-        <button className="tap" onClick={function() { setShowModelPicker(function(p) { return !p; }); }}
-          style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 100,
-            background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--text-dim)" }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 100,
+          background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--text-dim)" }}>
           <Icon name="brain" size={13} stroke={2} />
-          {model || agent.model}
-          <Icon name="chevD" size={12} stroke={2.5} />
-        </button>
-      </div>
-
-      {/* Model picker dropdown */}
-      {showModelPicker && (
-        <div style={{ margin: "0 18px 12px", padding: "10px 0", background: "var(--surface)", borderRadius: 14, border: "1px solid var(--border)" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-ghost)", padding: "0 14px 8px" }}>SELECT MODEL</div>
-          {allModels.map(function(m) {
-            const mid = m.id || m.name;
-            const active = (model || agent.model) === mid;
-            return (
-              <button key={mid} className="tap" onClick={function() { setModel(mid); setShowModelPicker(false); }}
-                style={{ width: "100%", textAlign: "left", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
-                  background: active ? "rgba(91,140,255,0.1)" : "transparent" }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: active ? "var(--accent)" : "var(--surface-2)", flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: active ? 660 : 500, color: active ? "var(--accent)" : "var(--text)" }} className="clip">{m.name || mid}</div>
-                  {m.family && <div style={{ fontSize: 11, color: "var(--text-ghost)", marginTop: 1 }}>{m.family}{m.ctx ? ` · ${m.ctx}` : ""}</div>}
-                </div>
-                {mid === agent.model && <Pill tone="ok" style={{ fontSize: 9.5 }}>default</Pill>}
-              </button>
-            );
-          })}
-          <div style={{ padding: "8px 14px 2px", fontSize: 11, color: "var(--text-ghost)", borderTop: "1px solid var(--border)", marginTop: 4 }}>
-            Model override depends on agent config. Default: <span className="mono">{agent.model}</span>
-          </div>
+          <span className="mono">{agent.model}</span>
         </div>
-      )}
+      </div>
 
       {/* Empty state */}
       {messages.length === 0 && !sending && (
