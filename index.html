@@ -188,6 +188,9 @@ const ICONS = {
   list: "M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01",
   globe: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 4 6 4 9s-1.5 6.5-4 9c-2.5-2.5-4-6-4-9s1.5-6.5 4-9z",
   expand: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
+  image: "M3 5h18v14H3zM3 14l5-5 4 4 3-3 5 5M14 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z",
+  archive: "M3 5h18v4H3zM5 9v10h14V9M10 13h4",
+  warn: "M10.3 4l-8 14h15.5L10.3 4zM10.3 10v4M10.3 16h.01",
 };
 
 function Icon({ name, size = 22, stroke = 2, fill = "none", style }) {
@@ -743,37 +746,41 @@ function adaptModel(m, i) {
 function DataProvider({ children }) {
   const [state, setState] = useState({ agents: [], tasks: [], models: [], sessions: [], crons: [], status: null, sys: null, connected: null, loading: true });
 
-  const refresh = useCallback(async () => {
-    try {
-      const [agD, taskD, modD, statD, sessD, cronD, sysD] = await Promise.all([
-        apiFetch("/api/agents").catch(() => null),
-        apiFetch("/api/tasks").catch(() => null),
-        apiFetch("/api/models").catch(() => null),
-        apiFetch("/api/status").catch(() => null),
-        apiFetch("/api/sessions").catch(() => null),
-        apiFetch("/api/cron").catch(() => null),
-        apiFetch("/api/system").catch(() => null),
-      ]);
-      const connected = !!(agD || taskD || modD || statD);
-      const sessions = sessD?.sessions || [];
-      const crons = cronD?.jobs || [];
+  const refreshRef = useRef(null);
+  refreshRef.current = function() {
+    Promise.all([
+      apiFetch("/api/agents").catch(function() { return null; }),
+      apiFetch("/api/tasks").catch(function() { return null; }),
+      apiFetch("/api/models").catch(function() { return null; }),
+      apiFetch("/api/status").catch(function() { return null; }),
+      apiFetch("/api/sessions").catch(function() { return null; }),
+      apiFetch("/api/cron").catch(function() { return null; }),
+      apiFetch("/api/system").catch(function() { return null; }),
+    ]).then(function(results) {
+      var agD = results[0], taskD = results[1], modD = results[2], statD = results[3];
+      var sessD = results[4], cronD = results[5], sysD = results[6];
+      var connected = !!(agD || taskD || modD || statD);
+      var sessions = sessD && sessD.sessions ? sessD.sessions : [];
+      var crons = cronD && cronD.jobs ? cronD.jobs : [];
       setState({
-        agents: (agD?.agents || []).map(a => adaptAgent(a, sessions, crons)),
-        tasks: (taskD?.tasks || []).map(adaptTask),
-        models: (modD?.models || []).map(adaptModel),
-        sessions,
-        crons,
+        agents: (agD && agD.agents ? agD.agents : []).map(function(a) { return adaptAgent(a, sessions, crons); }),
+        tasks: (taskD && taskD.tasks ? taskD.tasks : []).map(adaptTask),
+        models: (modD && modD.models ? modD.models : []).map(adaptModel),
+        sessions: sessions,
+        crons: crons,
         status: statD,
         sys: sysD || null,
-        connected,
+        connected: connected,
         loading: false,
       });
-    } catch {
-      setState(s => ({ ...s, connected: false, loading: false }));
-    }
-  }, []);
+    }).catch(function() {
+      setState(function(s) { return Object.assign({}, s, { connected: false, loading: false }); });
+    });
+  };
 
-  useEffect(() => { refresh(); const t = setInterval(refresh, 15000); return () => clearInterval(t); }, [refresh]);
+  const refresh = useCallback(function() { refreshRef.current(); }, []);
+
+  useEffect(function() { refreshRef.current(); var t = setInterval(function() { refreshRef.current(); }, 15000); return function() { clearInterval(t); }; }, []);
 
   return <DataContext.Provider value={{ ...state, refresh }}>{children}</DataContext.Provider>;
 }
@@ -1125,13 +1132,210 @@ function SessionRow({ s }) {
   );
 }
 
-function AgentDetail({ agent, onClose }) {
+function AgentChat({ agent, onClose }) {
+  const d = useData();
+  const models = d?.models || [];
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(null);
+  const [model, setModel] = useState(agent.model || "");
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const sessionKey = useRef("agent:" + agent.id + ":jarvisapp-" + Math.random().toString(36).slice(2, 8));
+  const bottomRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(function() {
+    if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
+  }, [messages, sending]);
+
+  function send() {
+    const text = input.trim();
+    if (!text || sending) return;
+    setInput("");
+    setError(null);
+    const userMsg = { role: "user", text, id: Date.now() };
+    setMessages(function(prev) { return prev.concat(userMsg); });
+    setSending(true);
+
+    fetch("/api/agent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentId: agent.id, message: text, model: model || undefined, sessionKey: sessionKey.current }),
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        setSending(false);
+        if (data.error) {
+          setError(data.error);
+          return;
+        }
+        // Extract reply text from various response shapes
+        const reply = data.reply || data.response || data.content || data.text
+          || (data.output && (data.output.text || data.output.content))
+          || JSON.stringify(data);
+        setMessages(function(prev) { return prev.concat({ role: "agent", text: reply, id: Date.now() + 1 }); });
+      })
+      .catch(function(e) {
+        setSending(false);
+        setError("Network error — is the server running?");
+      });
+  }
+
+  function handleKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  }
+
+  const allModels = models.length ? models : [{ id: agent.model, name: agent.model }];
+
+  return (
+    <div className="screen anim-screen" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* Header */}
+      <Header
+        title={agent.name}
+        sub={<span className="mono" style={{ fontSize: 11 }}>{model || agent.model}</span>}
+        left={<GhostBtn icon="chevL" onClick={onClose} />}
+        right={
+          <button className="tap" onClick={() => setShowModelPicker(p => !p)}
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 100,
+              background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--text-dim)" }}>
+            <Icon name="brain" size={13} stroke={2} />
+            Model
+            <Icon name="chevD" size={12} stroke={2.5} />
+          </button>
+        }
+      />
+
+      {/* Model picker dropdown */}
+      {showModelPicker && (
+        <div style={{ margin: "0 18px 12px", padding: "10px 0", background: "var(--surface)", borderRadius: 14, border: "1px solid var(--border)" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-ghost)", padding: "0 14px 8px" }}>SELECT MODEL</div>
+          {allModels.map(m => {
+            const mid = m.id || m.name;
+            const active = (model || agent.model) === mid;
+            return (
+              <button key={mid} className="tap" onClick={() => { setModel(mid); setShowModelPicker(false); }}
+                style={{ width: "100%", textAlign: "left", padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
+                  background: active ? "rgba(91,140,255,0.1)" : "transparent" }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: active ? "var(--accent)" : "var(--surface-2)", flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: active ? 660 : 500, color: active ? "var(--accent)" : "var(--text)" }} className="clip">{m.name || mid}</div>
+                  {m.family && <div style={{ fontSize: 11, color: "var(--text-ghost)", marginTop: 1 }}>{m.family}{m.ctx ? ` · ${m.ctx}` : ""}</div>}
+                </div>
+                {mid === agent.model && <Pill tone="ok" style={{ fontSize: 9.5 }}>default</Pill>}
+              </button>
+            );
+          })}
+          <div style={{ padding: "8px 14px 2px", fontSize: 11, color: "var(--text-ghost)", borderTop: "1px solid var(--border)", marginTop: 4 }}>
+            Model override depends on agent config. Default: <span className="mono">{agent.model}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {messages.length === 0 && !sending && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, gap: 16 }}>
+          <AgentEmoji emoji={agent.emoji} name={agent.name} color={agent.color} size={64} />
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: -0.3, marginBottom: 6 }}>{agent.name}</div>
+            <div style={{ fontSize: 13, color: "var(--text-faint)", lineHeight: 1.5 }}>
+              Running <span className="mono">{agent.model}</span> via {agent.modelProvider}.<br />
+              Send a message to start a conversation.
+            </div>
+          </div>
+          {/* Quick starters */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 8 }}>
+            {["What can you help me with?", "Summarise recent activity", "What's in my workspace?"].map(q => (
+              <button key={q} className="tap" onClick={() => { setInput(q); inputRef.current?.focus(); }}
+                style={{ padding: "8px 14px", borderRadius: 100, fontSize: 12.5, fontWeight: 560,
+                  background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-dim)" }}>
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Messages */}
+      {messages.length > 0 && (
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+          {messages.map(msg => (
+            <div key={msg.id} style={{ display: "flex", flexDirection: msg.role === "user" ? "row-reverse" : "row", gap: 10, alignItems: "flex-end" }}>
+              {msg.role === "agent" && (
+                <div style={{ flexShrink: 0, marginBottom: 2 }}>
+                  <AgentEmoji emoji={agent.emoji} name={agent.name} color={agent.color} size={28} />
+                </div>
+              )}
+              <div style={{
+                maxWidth: "78%", padding: "10px 14px", borderRadius: msg.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                background: msg.role === "user" ? "var(--accent)" : "var(--surface)",
+                color: msg.role === "user" ? "#fff" : "var(--text)",
+                fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+              }}>
+                {msg.text}
+              </div>
+            </div>
+          ))}
+          {sending && (
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+              <AgentEmoji emoji={agent.emoji} name={agent.name} color={agent.color} size={28} />
+              <div style={{ padding: "12px 16px", borderRadius: "18px 18px 18px 4px", background: "var(--surface)", display: "flex", gap: 5, alignItems: "center" }}>
+                {[0,1,2].map(i => (
+                  <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--text-ghost)",
+                    animation: `pulse 1.2s ease-in-out ${i*0.2}s infinite` }} />
+                ))}
+              </div>
+            </div>
+          )}
+          {error && (
+            <div style={{ padding: "10px 14px", borderRadius: 12, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
+              display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <Icon name="warn" size={15} stroke={2} style={{ color: "var(--err)", flexShrink: 0, marginTop: 1 }} />
+              <span style={{ fontSize: 13, color: "var(--err)", lineHeight: 1.4 }}>{error}</span>
+            </div>
+          )}
+          <div ref={bottomRef} style={{ height: 1 }} />
+        </div>
+      )}
+
+      {/* Input bar */}
+      <div style={{ padding: "12px 18px 20px", borderTop: messages.length ? "1px solid var(--border)" : "none", background: "var(--bg)" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "var(--surface)", borderRadius: 20, padding: "8px 8px 8px 16px", border: "1px solid var(--border-strong)" }}>
+          <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKey}
+            placeholder="Message Admore…" rows={1}
+            style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: 14.5,
+              fontFamily: "inherit", resize: "none", maxHeight: 120, lineHeight: 1.5, paddingTop: 2 }} />
+          <button className="tap" onClick={send} disabled={!input.trim() || sending}
+            style={{ width: 38, height: 38, borderRadius: "50%", background: input.trim() && !sending ? "var(--accent)" : "var(--surface-2)",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              color: input.trim() && !sending ? "#fff" : "var(--text-ghost)", transition: "background 0.15s" }}>
+            <Icon name="send" size={17} stroke={2.2} />
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-ghost)", textAlign: "center", marginTop: 7 }}>
+          Messages go via <span className="mono">openclaw agent</span> · responses may take 10–60s
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentDetail({ agent, onClose, onChat }) {
   const [tab, setTab] = useState("overview");
   const tabs = ["overview", "sessions", "crons"];
   const recentSessions = (agent.sessions || []).slice(0, 10);
   return (
     <div className="screen pad-b anim-screen">
-      <Header title={agent.name} sub={`${agent.model} · ${agent.modelProvider}`} left={<GhostBtn icon="chevL" onClick={onClose} />} />
+      <Header title={agent.name} sub={`${agent.model} · ${agent.modelProvider}`} left={<GhostBtn icon="chevL" onClick={onClose} />}
+        right={
+          <button className="tap" onClick={onChat}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 100,
+              background: "var(--accent)", color: "#fff", fontSize: 13, fontWeight: 660 }}>
+            <Icon name="message" size={14} stroke={2.2} />
+            Chat
+          </button>
+        }
+      />
       <div style={{ display: "flex", gap: 8, padding: "0 18px 14px", overflowX: "auto", scrollbarWidth: "none" }}>
         {tabs.map(t => (
           <button key={t} className="tap" onClick={() => setTab(t)} style={{ flexShrink: 0, padding: "8px 16px", borderRadius: 100, fontSize: 13, fontWeight: 600, textTransform: "capitalize",
@@ -1165,11 +1369,19 @@ function AgentDetail({ agent, onClose }) {
               ))}
             </div>
             {agent.workspace && (
-              <div className="card" style={{ padding: 14 }}>
+              <div className="card" style={{ padding: 14, marginBottom: 14 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-ghost)", marginBottom: 6 }}>WORKSPACE</div>
                 <span className="mono" style={{ fontSize: 11.5, color: "var(--text-dim)", wordBreak: "break-all" }}>{agent.workspace}</span>
               </div>
             )}
+            {/* Start agent button */}
+            <button className="tap" onClick={onChat}
+              style={{ width: "100%", padding: 16, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                background: "linear-gradient(135deg, rgba(91,140,255,0.18), rgba(167,121,255,0.14))",
+                border: "1px solid var(--border-strong)", color: "var(--accent)", fontWeight: 660, fontSize: 14.5 }}>
+              <Icon name="play" size={18} stroke={2} />
+              {agent.status === "running" ? "Open Chat" : "Start / Chat with Agent"}
+            </button>
           </div>
         )}
         {tab === "sessions" && (
@@ -1190,12 +1402,14 @@ function AgentDetail({ agent, onClose }) {
 function Agents({ nav }) {
   const d = useData();
   const [selected, setSelected] = useState(null);
+  const [chatAgent, setChatAgent] = useState(null);
   const allAgents = d?.agents?.length ? d.agents : AGENTS;
   const [filter, setFilter] = useState("All");
   const filters = ["All", "Running", "Idle"];
   const list = allAgents.filter(a => filter === "All" || a.status === filter.toLowerCase());
 
-  if (selected) return <AgentDetail agent={selected} onClose={() => setSelected(null)} />;
+  if (chatAgent) return <AgentChat agent={chatAgent} onClose={() => setChatAgent(null)} />;
+  if (selected) return <AgentDetail agent={selected} onClose={() => setSelected(null)} onChat={() => { setChatAgent(selected); setSelected(null); }} />;
 
   return (
     <div className="screen pad-b anim-screen">

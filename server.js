@@ -13,7 +13,28 @@ const execFileAsync = promisify(execFile);
 const PORT = 3000;
 const DIR = __dirname;
 const OPENCLAW = "openclaw";
-const EXEC_OPTS = { timeout: 10000, maxBuffer: 1024 * 1024 * 4 };
+const EXEC_OPTS = { timeout: 30000, maxBuffer: 1024 * 1024 * 4 };
+
+// Simple in-memory cache — openclaw CLI takes ~15s cold start, so cache results
+const CACHE = new Map();
+const CACHE_TTL = { default: 20000, "/api/system": 10000, "/api/files": 30000 };
+
+function cached(key, ttl, fn) {
+  const now = Date.now();
+  const hit = CACHE.get(key);
+  if (hit && now - hit.ts < ttl) return Promise.resolve(hit.data);
+  // Deduplicate in-flight requests for the same key
+  if (hit && hit.pending) return hit.pending;
+  const promise = fn().then(data => {
+    CACHE.set(key, { ts: Date.now(), data });
+    return data;
+  }).catch(e => {
+    CACHE.delete(key);
+    throw e;
+  });
+  CACHE.set(key, { ts: 0, data: null, pending: promise });
+  return promise;
+}
 
 const MIME = {
   ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
@@ -241,6 +262,44 @@ const API = {
 
 // --- POST handlers ---
 async function handlePost(pathname, body) {
+  if (pathname === "/api/agent/chat") {
+    const { agentId, message, model, sessionKey } = body;
+    if (!message) throw new Error("message required");
+    if (!agentId) throw new Error("agentId required");
+
+    const args = ["agent", "--agent", agentId, "--message", message, "--json"];
+    if (sessionKey) args.push("--session-key", sessionKey);
+    if (model) args.push("--model", model);
+
+    try {
+      const { stdout, stderr } = await execFileAsync(OPENCLAW, args, {
+        timeout: 120000,
+        maxBuffer: 1024 * 1024 * 4,
+      });
+      // openclaw agent --json outputs a JSON object on success
+      const text = stdout.trim();
+      // Filter out log lines (start with "[")
+      const jsonLines = text.split("\n").filter(l => !l.startsWith("[") && l.trim());
+      const jsonText = jsonLines.join("\n").trim();
+      if (!jsonText) {
+        // No JSON output — check stderr for error message
+        const errLines = (stderr || "").split("\n").filter(l => !l.startsWith("[") && l.trim());
+        throw new Error(errLines.join(" ").trim() || "Agent returned no response");
+      }
+      try {
+        return JSON.parse(jsonText);
+      } catch {
+        // Return plain text response if not JSON
+        return { reply: jsonText, sessionKey };
+      }
+    } catch (e) {
+      if (e.killed || e.code === "ETIMEDOUT") throw new Error("Agent timed out. The model may be loading — try again.");
+      // Re-throw with cleaned message
+      const msg = (e.message || "").replace(/GatewayClientRequestError: /g, "").replace(/FailoverError: /g, "");
+      throw new Error(msg || "Agent error");
+    }
+  }
+
   if (pathname === "/api/agent/run") {
     const { prompt, agentId } = body;
     if (!prompt) throw new Error("prompt required");
@@ -249,6 +308,7 @@ async function handlePost(pathname, body) {
     args.push(prompt);
     return oc(args);
   }
+
   throw new Error("Unknown route");
 }
 
@@ -313,7 +373,13 @@ const server = http.createServer(async (req, res) => {
     }
     try {
       const params = Object.fromEntries(url.searchParams.entries());
-      const data = await handler(params);
+      const hasParams = Object.keys(params).length > 0;
+      const cacheKey = hasParams ? `${pathname}?${url.searchParams}` : pathname;
+      const ttl = CACHE_TTL[pathname] || CACHE_TTL.default;
+      // Skip cache for parameterised requests (search queries etc)
+      const data = hasParams
+        ? await handler(params)
+        : await cached(cacheKey, ttl, () => handler(params));
       res.writeHead(200);
       res.end(JSON.stringify(data));
     } catch (e) {
@@ -337,4 +403,12 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`\nJarvis PWA running at http://127.0.0.1:${PORT}`);
   console.log("API endpoints: /api/status /api/agents /api/tasks /api/sessions /api/models /api/cron\n");
+  // Pre-warm cache in background so first browser load is fast
+  const warm = ["/api/agents", "/api/status", "/api/sessions", "/api/cron", "/api/tasks", "/api/models", "/api/system"];
+  warm.forEach(k => {
+    const h = API[k];
+    if (h) cached(k, CACHE_TTL[k] || CACHE_TTL.default, () => h({}))
+      .then(() => console.log(`[cache] warmed ${k}`))
+      .catch(e => console.log(`[cache] ${k} failed: ${e.message}`));
+  });
 });
