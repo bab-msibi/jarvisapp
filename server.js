@@ -62,7 +62,10 @@ const API = {
 
   "/api/models": async () => {
     const { stdout } = await execFileAsync(OPENCLAW, ["models", "list"], EXEC_OPTS);
-    const [header, ...rows] = stdout.trim().split("\n");
+    // Strip ANSI escape codes from the output
+    const stripAnsi = s => s.replace(/\x1b\[[0-9;]*m/g, "");
+    const clean = stripAnsi(stdout);
+    const [header, ...rows] = clean.trim().split("\n");
     // Find column start positions from header
     const cols = ["Model", "Input", "Ctx", "Local", "Auth", "Tags"];
     const pos = cols.map(c => header.indexOf(c));
@@ -79,7 +82,7 @@ const API = {
       return {
         key, name: key.replace(/^[^/]+\//, ""),
         input: get(1), contextWindow: isNaN(ctxN) ? 0 : Math.round(ctxN),
-        local: get(3) === "yes", available: true, tags,
+        local: get(3).toLowerCase() === "yes", available: true, tags,
       };
     }).filter(m => m.key);
     return { models };
