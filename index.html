@@ -1424,7 +1424,7 @@ function AgentChat({ agent, onClose }) {
       )}
 
       {/* Input bar */}
-      <div style={{ padding: "12px 18px 20px", borderTop: messages.length ? "1px solid var(--border)" : "none", background: "var(--bg)" }}>
+      <div style={{ padding: "12px 18px calc(20px + 80px + env(safe-area-inset-bottom, 0px))", borderTop: messages.length ? "1px solid var(--border)" : "none", background: "var(--bg)" }}>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "var(--surface)", borderRadius: 20, padding: "8px 8px 8px 16px", border: "1px solid var(--border-strong)" }}>
           <textarea ref={inputRef} value={input} onChange={function(e) { setInput(e.target.value); }} onKeyDown={handleKey}
             placeholder={"Message " + agent.name + "…"} rows={1}
