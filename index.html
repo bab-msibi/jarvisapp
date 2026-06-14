@@ -1403,7 +1403,7 @@ function Agents({ nav }) {
   const d = useData();
   const [selected, setSelected] = useState(null);
   const [chatAgent, setChatAgent] = useState(null);
-  const allAgents = d?.agents?.length ? d.agents : AGENTS;
+  const allAgents = d?.agents || [];
   const [filter, setFilter] = useState("All");
   const filters = ["All", "Running", "Idle"];
   const list = allAgents.filter(a => filter === "All" || a.status === filter.toLowerCase());
@@ -1913,7 +1913,7 @@ function MD({ text }) {
   });
 }
 
-function AgentChat({ nav }) {
+function AgentChatLegacy({ nav }) {
   const a = AGENTS.find(x => x.id === nav.params.id) || AGENTS[0];
   const [sheet, setSheet] = useState(null);
   const [memOpen, setMemOpen] = useState(false);
@@ -2595,7 +2595,7 @@ function hexToRgb(h) {
 
 function renderOverlay(screen, nav) {
   const map = {
-    agentChat: AgentChat, multiAgent: MultiAgent, terminal: Terminal, models: Models,
+    agentChat: AgentChatLegacy, multiAgent: MultiAgent, terminal: Terminal, models: Models,
     openclaw: OpenClaw, workflow: WorkflowBuilder, notifications: Notifications,
     security: Security, analytics: Analytics, createAgent: CreateAgent, createTask: CreateTask,
     taskDetail: TaskDetail, fileDetail: FileDetail, upload: Upload, profile: Profile,
