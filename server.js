@@ -66,6 +66,80 @@ const API = {
 
   "/api/cron": async () => oc(["cron", "list", "--json"]),
 
+  "/api/files": async (params) => {
+    const fsP = require("fs").promises;
+    const pathM = require("path");
+    const WORKSPACE = "/Users/admin/.openclaw/workspace";
+    const IGNORE = new Set([".git", ".obsidian", ".DS_Store", "node_modules", ".tmp"]);
+    const q = (params?.q || "").toLowerCase();
+    const folder = params?.folder || "";
+    const limit = Math.min(parseInt(params?.limit) || 50, 200);
+
+    // Walk directory, collect files
+    const files = [];
+    async function walk(dir, depth) {
+      if (depth > 6) return;
+      let entries;
+      try { entries = await fsP.readdir(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (IGNORE.has(e.name) || e.name.startsWith(".")) continue;
+        const full = pathM.join(dir, e.name);
+        if (e.isDirectory()) {
+          await walk(full, depth + 1);
+        } else {
+          try {
+            const st = await fsP.stat(full);
+            const rel = pathM.relative(WORKSPACE, full);
+            const ext = pathM.extname(e.name).replace(".", "").toLowerCase();
+            const sizeKb = Math.round(st.size / 1024);
+            const sizeStr = st.size > 1048576 ? `${(st.size/1048576).toFixed(1)} MB`
+              : st.size > 1024 ? `${Math.round(st.size/1024)} KB`
+              : `${st.size} B`;
+            files.push({
+              id: rel, name: e.name, path: rel,
+              dir: pathM.dirname(rel) === "." ? "/" : pathM.dirname(rel),
+              ext: ext || "file", sizeStr, sizeKb,
+              modified: st.mtimeMs,
+            });
+          } catch {}
+        }
+      }
+    }
+
+    const scanDir = folder ? pathM.join(WORKSPACE, folder) : WORKSPACE;
+    await walk(scanDir, 0);
+
+    // Sort by most recently modified
+    files.sort((a, b) => b.modified - a.modified);
+
+    // Filter by search
+    const filtered = q ? files.filter(f => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q)) : files;
+
+    // Top folders
+    const folderCounts = {};
+    files.forEach(f => {
+      const top = f.path.split("/")[0];
+      folderCounts[top] = (folderCounts[top] || 0) + 1;
+    });
+    const folders = Object.entries(folderCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+      .map(([name, count]) => ({ name, count }));
+
+    // Disk usage
+    const totalBytes = files.reduce((s, f) => s + (f.sizeKb * 1024), 0);
+    const totalMb = (totalBytes / 1048576).toFixed(0);
+
+    return {
+      files: filtered.slice(0, limit),
+      total: filtered.length,
+      allTotal: files.length,
+      folders,
+      workspaceMb: totalMb,
+      workspace: WORKSPACE,
+    };
+  },
+
   "/api/system": async () => {
     const os = require("os");
     const { execFile: ef } = require("child_process");
@@ -238,7 +312,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     try {
-      const data = await handler();
+      const params = Object.fromEntries(url.searchParams.entries());
+      const data = await handler(params);
       res.writeHead(200);
       res.end(JSON.stringify(data));
     } catch (e) {
