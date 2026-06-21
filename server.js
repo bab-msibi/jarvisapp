@@ -90,38 +90,105 @@ const API = {
 
   "/api/cron": async () => oc(["cron", "list", "--json"]),
 
+  "/api/market": async () => {
+    // Seeded pseudo-random walk for consistent paper-trading simulation
+    function seededRand(seed) {
+      let s = seed;
+      return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff; };
+    }
+
+    function buildSeries({ name, baseSeed, startPrice, dailyVol, days = 60 }) {
+      const rand = seededRand(baseSeed);
+      const now = new Date();
+      const prices = [], dates = [];
+      let price = startPrice;
+      // Walk backwards then build forward
+      const series = [];
+      for (let i = days; i >= 0; i--) {
+        const d = new Date(now); d.setDate(d.getDate() - i);
+        if (d.getDay() === 0 || d.getDay() === 6) continue; // skip weekends
+        const change = (rand() - 0.48) * dailyVol; // slight upward drift
+        price = Math.max(price * (1 + change), price * 0.8);
+        series.push({ date: d.toISOString().slice(0, 10), close: Math.round(price * 100) / 100 });
+      }
+      // Add intraday movement for "today"
+      const hourFrac = (new Date().getHours() + new Date().getMinutes() / 60) / 24;
+      const todayRand = seededRand(baseSeed + Math.floor(Date.now() / 60000)); // changes per minute
+      const intradayMove = (todayRand() - 0.48) * dailyVol * 0.7 * hourFrac;
+      const last = series[series.length - 1];
+      const current = Math.round(last.close * (1 + intradayMove) * 100) / 100;
+      const prevClose = series.length >= 2 ? series[series.length - 2].close : last.close;
+      const change = current - prevClose;
+      const changePct = prevClose ? (change / prevClose) * 100 : 0;
+      const todayHigh = Math.max(current, last.close) * (1 + dailyVol * 0.3);
+      const todayLow = Math.min(current, last.close) * (1 - dailyVol * 0.3);
+      return {
+        name,
+        current: Math.round(current * 100) / 100,
+        prevClose,
+        change: parseFloat(change.toFixed(2)),
+        changePct: parseFloat(changePct.toFixed(2)),
+        high: Math.round(todayHigh * 100) / 100,
+        low: Math.round(todayLow * 100) / 100,
+        prices: series.map(s => s.close),
+        dates: series.map(s => s.date),
+        simulated: true,
+      };
+    }
+
+    return {
+      dax: buildSeries({ name: "DAX 40",  baseSeed: 0x44415831, startPrice: 22800, dailyVol: 0.012 }),
+      nasdaq: buildSeries({ name: "NASDAQ", baseSeed: 0x4e445131, startPrice: 18900, dailyVol: 0.015 }),
+      updatedAt: Date.now(),
+    };
+  },
+
   "/api/files": async (params) => {
     const fsP = require("fs").promises;
     const pathM = require("path");
-    const WORKSPACE = "/Users/admin/.openclaw/workspace";
-    const IGNORE = new Set([".git", ".obsidian", ".DS_Store", "node_modules", ".tmp"]);
+    const os = require("os");
+    const HOME = os.homedir();
+    // Scan the agent workspace AND the user's common folders so "Recent Files"
+    // reflects actual recent activity (screenshots, downloads, docs).
+    const ROOTS = [
+      { label: "Desktop",   dir: pathM.join(HOME, "Desktop"),   depth: 3 },
+      { label: "Downloads", dir: pathM.join(HOME, "Downloads"), depth: 3 },
+      { label: "Documents", dir: pathM.join(HOME, "Documents"), depth: 3 },
+      { label: "Pictures",  dir: pathM.join(HOME, "Pictures"),  depth: 3 },
+      { label: "Workspace", dir: "/Users/admin/.openclaw/workspace", depth: 6 },
+    ];
+    const IGNORE = new Set([".git", ".obsidian", ".DS_Store", "node_modules", ".tmp", "Photos Library.photoslibrary"]);
     const q = (params?.q || "").toLowerCase();
-    const folder = params?.folder || "";
+    const folder = params?.folder || ""; // source label, e.g. "Desktop"
     const limit = Math.min(parseInt(params?.limit) || 50, 200);
 
-    // Walk directory, collect files
+    // Walk a root directory, collect files tagged with their source root
     const files = [];
-    async function walk(dir, depth) {
-      if (depth > 6) return;
+    async function walk(dir, root, depth) {
+      if (depth > root.depth) return;
       let entries;
       try { entries = await fsP.readdir(dir, { withFileTypes: true }); } catch { return; }
       for (const e of entries) {
         if (IGNORE.has(e.name) || e.name.startsWith(".")) continue;
         const full = pathM.join(dir, e.name);
         if (e.isDirectory()) {
-          await walk(full, depth + 1);
+          await walk(full, root, depth + 1);
         } else {
           try {
             const st = await fsP.stat(full);
-            const rel = pathM.relative(WORKSPACE, full);
+            const relToRoot = pathM.relative(root.dir, full);
+            const sub = pathM.dirname(relToRoot);
             const ext = pathM.extname(e.name).replace(".", "").toLowerCase();
             const sizeKb = Math.round(st.size / 1024);
             const sizeStr = st.size > 1048576 ? `${(st.size/1048576).toFixed(1)} MB`
               : st.size > 1024 ? `${Math.round(st.size/1024)} KB`
               : `${st.size} B`;
             files.push({
-              id: rel, name: e.name, path: rel,
-              dir: pathM.dirname(rel) === "." ? "/" : pathM.dirname(rel),
+              id: `${root.label}/${relToRoot}`, name: e.name,
+              path: sub === "." ? e.name : relToRoot,
+              source: root.label,
+              dir: sub === "." ? root.label : `${root.label}/${sub}`,
+              fullPath: full,
               ext: ext || "file", sizeStr, sizeKb,
               modified: st.mtimeMs,
             });
@@ -130,25 +197,22 @@ const API = {
       }
     }
 
-    const scanDir = folder ? pathM.join(WORKSPACE, folder) : WORKSPACE;
-    await walk(scanDir, 0);
+    await Promise.all(ROOTS.map(r => walk(r.dir, r, 0)));
 
     // Sort by most recently modified
     files.sort((a, b) => b.modified - a.modified);
 
-    // Filter by search
-    const filtered = q ? files.filter(f => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q)) : files;
+    // Filter by source folder, then search query
+    let filtered = files;
+    if (folder) filtered = filtered.filter(f => f.source === folder);
+    if (q) filtered = filtered.filter(f => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q));
 
-    // Top folders
-    const folderCounts = {};
-    files.forEach(f => {
-      const top = f.path.split("/")[0];
-      folderCounts[top] = (folderCounts[top] || 0) + 1;
-    });
-    const folders = Object.entries(folderCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 12)
-      .map(([name, count]) => ({ name, count }));
+    // Top folders = source roots with counts (stable chips)
+    const sourceCounts = {};
+    files.forEach(f => { sourceCounts[f.source] = (sourceCounts[f.source] || 0) + 1; });
+    const folders = ROOTS
+      .map(r => ({ name: r.label, count: sourceCounts[r.label] || 0 }))
+      .filter(f => f.count > 0);
 
     // Disk usage
     const totalBytes = files.reduce((s, f) => s + (f.sizeKb * 1024), 0);
@@ -160,7 +224,7 @@ const API = {
       allTotal: files.length,
       folders,
       workspaceMb: totalMb,
-      workspace: WORKSPACE,
+      workspace: HOME,
     };
   },
 
