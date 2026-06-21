@@ -1294,7 +1294,7 @@ function AgentChat({ agent, onClose }) {
       {/* Header */}
       <Header
         title={agent.name}
-        sub={<span className="mono" style={{ fontSize: 11 }}>{model || agent.model}</span>}
+        sub={<span className="mono" style={{ fontSize: 11 }}>{agent.model}</span>}
         left={<GhostBtn icon="chevL" onClick={onClose} />}
         right={
           <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
