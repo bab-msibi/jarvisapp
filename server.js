@@ -10,14 +10,20 @@ const { execFile } = require("child_process");
 const { promisify } = require("util");
 
 const execFileAsync = promisify(execFile);
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT, 10) || 3000;
+const HOST = process.env.HOST || "127.0.0.1";
 const DIR = __dirname;
-const OPENCLAW = "openclaw";
+const OPENCLAW = process.env.OPENCLAW_BIN || "openclaw";
 const EXEC_OPTS = { timeout: 30000, maxBuffer: 1024 * 1024 * 4 };
+const MAX_BODY = 1024 * 1024; // 1 MB POST body limit
+
+class HttpError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
+}
 
 // Simple in-memory cache — openclaw CLI takes ~15s cold start, so cache results
 const CACHE = new Map();
-const CACHE_TTL = { default: 20000, "/api/system": 10000, "/api/files": 30000 };
+const CACHE_TTL = { default: 20000, "/api/system": 10000, "/api/files": 30000, "/api/health": 0 };
 
 function cached(key, ttl, fn) {
   const now = Date.now();
@@ -43,12 +49,32 @@ const MIME = {
 };
 
 async function oc(args) {
-  const { stdout } = await execFileAsync(OPENCLAW, args, EXEC_OPTS);
-  return JSON.parse(stdout);
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync(OPENCLAW, args, EXEC_OPTS));
+  } catch (e) {
+    if (e.code === "ENOENT") throw new Error(`'${OPENCLAW}' CLI not found in PATH`);
+    if (e.killed || e.code === "ETIMEDOUT") throw new Error(`'${OPENCLAW} ${args[0]}' timed out`);
+    throw e;
+  }
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    throw new Error(`'${OPENCLAW} ${args.join(" ")}' returned invalid JSON`);
+  }
 }
 
 // --- API handlers ---
 const API = {
+  // Cheap liveness probe — no CLI dependency, lets the UI tell "server down"
+  // apart from "openclaw unavailable"
+  "/api/health": async () => ({
+    ok: true,
+    uptimeSec: Math.floor(process.uptime()),
+    pid: process.pid,
+    timestamp: Date.now(),
+  }),
+
   "/api/status": async () => oc(["status", "--json"]),
 
   "/api/agents": async () => {
@@ -327,12 +353,73 @@ const API = {
   },
 };
 
+// Terminal working directory — persists across /api/exec calls in this process
+let TERM_CWD = process.env.HOME || DIR;
+const TERM_SHELL = process.env.SHELL || "/bin/zsh";
+const TERM_TIMEOUT = 60000;
+const TERM_SENTINEL = "__JARVIS_CWD__";
+// A login shell sources the user's profile on every command; if that profile is
+// noisy (e.g. references missing binaries) it pollutes stderr on every run. We
+// capture that constant startup noise once and strip only the exact baseline,
+// so real command errors still surface.
+let TERM_BASELINE_ERR = null;
+
+function runShell(command, cwd) {
+  const wrapped = `${command}\n__rc=$?; printf '\\n${TERM_SENTINEL}%s\\n' "$PWD"; exit $__rc`;
+  return new Promise((resolve) => {
+    execFile(TERM_SHELL, ["-lc", wrapped], {
+      cwd,
+      timeout: TERM_TIMEOUT,
+      maxBuffer: 1024 * 1024 * 8,
+      env: process.env,
+    }, (err, stdout, stderr) => {
+      let out = stdout || "";
+      let newCwd = cwd;
+      const idx = out.lastIndexOf(TERM_SENTINEL);
+      if (idx !== -1) {
+        newCwd = (out.slice(idx + TERM_SENTINEL.length).split("\n")[0] || "").trim() || cwd;
+        out = out.slice(0, idx).replace(/\n$/, "");
+      }
+      const timedOut = !!(err && (err.killed || err.code === "ETIMEDOUT"));
+      const code = timedOut ? 124 : (err && typeof err.code === "number" ? err.code : err ? 1 : 0);
+      resolve({ stdout: out, stderr: stderr || "", cwd: newCwd, code, timedOut });
+    });
+  });
+}
+
 // --- POST handlers ---
 async function handlePost(pathname, body) {
+  if (pathname === "/api/exec") {
+    const command = body?.command;
+    if (typeof command !== "string" || !command.trim()) {
+      throw new HttpError(400, "command required");
+    }
+    // Lazily measure the shell's startup-only stderr (running a no-op command)
+    if (TERM_BASELINE_ERR === null) {
+      try { TERM_BASELINE_ERR = (await runShell(":", TERM_CWD)).stderr; } catch { TERM_BASELINE_ERR = ""; }
+    }
+    const r = await runShell(command, TERM_CWD);
+    // Only trust the sentinel-reported cwd if it still exists
+    let cwd = r.cwd;
+    try { if (fs.existsSync(cwd)) TERM_CWD = cwd; else cwd = TERM_CWD; } catch { cwd = TERM_CWD; }
+    // Strip the constant login-shell startup noise from stderr
+    let stderr = r.stderr;
+    if (TERM_BASELINE_ERR && stderr.startsWith(TERM_BASELINE_ERR)) {
+      stderr = stderr.slice(TERM_BASELINE_ERR.length);
+    }
+    return {
+      stdout: r.stdout,
+      stderr: r.timedOut ? `Command timed out after ${TERM_TIMEOUT / 1000}s` : stderr,
+      cwd,
+      code: r.code,
+      timedOut: r.timedOut,
+    };
+  }
+
   if (pathname === "/api/agent/chat") {
     const { agentId, message, model, sessionKey } = body;
-    if (!message) throw new Error("message required");
-    if (!agentId) throw new Error("agentId required");
+    if (!message || typeof message !== "string") throw new HttpError(400, "message required");
+    if (!agentId || typeof agentId !== "string") throw new HttpError(400, "agentId required");
 
     const args = ["agent", "--agent", agentId, "--message", message, "--json"];
     if (sessionKey) args.push("--session-key", sessionKey);
@@ -360,6 +447,7 @@ async function handlePost(pathname, body) {
         return { reply: jsonText, sessionKey };
       }
     } catch (e) {
+      if (e.code === "ENOENT") throw new Error(`'${OPENCLAW}' CLI not found in PATH`);
       if (e.killed || e.code === "ETIMEDOUT") throw new Error("Agent timed out. The model may be loading — try again.");
       // Re-throw with cleaned message
       const msg = (e.message || "").replace(/GatewayClientRequestError: /g, "").replace(/FailoverError: /g, "");
@@ -369,27 +457,33 @@ async function handlePost(pathname, body) {
 
   if (pathname === "/api/agent/run") {
     const { prompt, agentId } = body;
-    if (!prompt) throw new Error("prompt required");
+    if (!prompt || typeof prompt !== "string") throw new HttpError(400, "prompt required");
     const args = ["agent", "--output", "json"];
     if (agentId) args.push("--agent", agentId);
     args.push(prompt);
     return oc(args);
   }
 
-  throw new Error("Unknown route");
+  throw new HttpError(404, "Unknown route");
 }
 
 // --- Static file server ---
+// HTML/JS/manifest stay fresh (no-cache); icons can be cached for a day.
+const STATIC_CACHE = { ".png": "public, max-age=86400", ".svg": "public, max-age=86400" };
+
 function serveFile(res, filePath) {
   const ext = path.extname(filePath);
   const mime = MIME[ext] || "application/octet-stream";
   fs.readFile(filePath, (err, data) => {
     if (err) {
-      res.writeHead(404);
+      res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not found");
       return;
     }
-    res.writeHead(200, { "Content-Type": mime });
+    res.writeHead(200, {
+      "Content-Type": mime,
+      "Cache-Control": STATIC_CACHE[ext] || "no-cache",
+    });
     res.end(data);
   });
 }
@@ -400,9 +494,9 @@ function cors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
-const server = http.createServer(async (req, res) => {
+async function handleRequest(req, res) {
   cors(res);
-  const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
+  const url = new URL(req.url, `http://${HOST}:${PORT}`);
   const pathname = url.pathname;
 
   if (req.method === "OPTIONS") {
@@ -417,15 +511,31 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST") {
       let body = "";
-      req.on("data", c => (body += c));
+      let tooLarge = false;
+      req.on("data", c => {
+        if (tooLarge) return;
+        body += c;
+        if (body.length > MAX_BODY) {
+          tooLarge = true;
+          res.writeHead(413);
+          res.end(JSON.stringify({ error: "Request body too large" }));
+          req.destroy();
+        }
+      });
       req.on("end", async () => {
+        if (tooLarge) return;
         try {
-          const parsed = body ? JSON.parse(body) : {};
+          let parsed;
+          try {
+            parsed = body ? JSON.parse(body) : {};
+          } catch {
+            throw new HttpError(400, "Invalid JSON body");
+          }
           const result = await handlePost(pathname, parsed);
           res.writeHead(200);
           res.end(JSON.stringify(result));
         } catch (e) {
-          res.writeHead(400);
+          res.writeHead(e.status || 500);
           res.end(JSON.stringify({ error: e.message }));
         }
       });
@@ -441,41 +551,80 @@ const server = http.createServer(async (req, res) => {
     try {
       const params = Object.fromEntries(url.searchParams.entries());
       const hasParams = Object.keys(params).length > 0;
-      const cacheKey = hasParams ? `${pathname}?${url.searchParams}` : pathname;
-      const ttl = CACHE_TTL[pathname] || CACHE_TTL.default;
+      const ttl = CACHE_TTL[pathname] ?? CACHE_TTL.default;
       // Skip cache for parameterised requests (search queries etc)
       const data = hasParams
         ? await handler(params)
-        : await cached(cacheKey, ttl, () => handler(params));
+        : await cached(pathname, ttl, () => handler(params));
       res.writeHead(200);
       res.end(JSON.stringify(data));
     } catch (e) {
-      res.writeHead(500);
+      res.writeHead(e.status || 500);
       res.end(JSON.stringify({ error: e.message }));
     }
     return;
   }
 
-  // Static files
-  let filePath = path.join(DIR, pathname === "/" ? "index.html" : pathname);
-  // Security: stay within DIR
-  if (!filePath.startsWith(DIR)) {
-    res.writeHead(403);
+  // Static files — decode and resolve, then verify the path stays within DIR
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    res.writeHead(400, { "Content-Type": "text/plain" });
+    res.end("Bad request");
+    return;
+  }
+  const filePath = path.resolve(DIR, "." + (decoded === "/" ? "/index.html" : decoded));
+  if (filePath !== DIR && !filePath.startsWith(DIR + path.sep)) {
+    res.writeHead(403, { "Content-Type": "text/plain" });
     res.end("Forbidden");
     return;
   }
   serveFile(res, filePath);
+}
+
+const server = http.createServer((req, res) => {
+  // Catch anything the routing layer misses so one bad request can't kill the server
+  handleRequest(req, res).catch(e => {
+    console.error("[server] request error:", e);
+    try {
+      if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Internal server error" }));
+    } catch {}
+  });
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`\nJarvis PWA running at http://127.0.0.1:${PORT}`);
-  console.log("API endpoints: /api/status /api/agents /api/tasks /api/sessions /api/models /api/cron\n");
+server.on("error", (e) => {
+  if (e.code === "EADDRINUSE") {
+    console.error(`\nPort ${PORT} is already in use — is another server.js running?`);
+    console.error(`Stop it, or start on a different port: PORT=3001 node server.js\n`);
+    process.exit(1);
+  }
+  throw e;
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`\nJarvis PWA running at http://${HOST}:${PORT}`);
+  console.log("API endpoints: /api/health /api/status /api/agents /api/tasks /api/sessions /api/models /api/cron /api/system /api/files /api/exec\n");
   // Pre-warm cache in background so first browser load is fast
   const warm = ["/api/agents", "/api/status", "/api/sessions", "/api/cron", "/api/tasks", "/api/models", "/api/system"];
   warm.forEach(k => {
     const h = API[k];
-    if (h) cached(k, CACHE_TTL[k] || CACHE_TTL.default, () => h({}))
+    if (h) cached(k, CACHE_TTL[k] ?? CACHE_TTL.default, () => h({}))
       .then(() => console.log(`[cache] warmed ${k}`))
       .catch(e => console.log(`[cache] ${k} failed: ${e.message}`));
   });
 });
+
+// Graceful shutdown
+for (const sig of ["SIGINT", "SIGTERM"]) {
+  process.on(sig, () => {
+    console.log(`\n${sig} received — shutting down`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 2000).unref();
+  });
+}
+
+// Last-resort safety nets: log and keep serving rather than dying silently
+process.on("uncaughtException", e => console.error("[fatal] uncaught exception:", e));
+process.on("unhandledRejection", e => console.error("[fatal] unhandled rejection:", e));
