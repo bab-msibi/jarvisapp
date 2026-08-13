@@ -427,7 +427,7 @@ async function handlePost(pathname, body) {
 
     try {
       const { stdout, stderr } = await execFileAsync(OPENCLAW, args, {
-        timeout: 240000,
+        timeout: 620000,
         maxBuffer: 1024 * 1024 * 4,
       });
       // openclaw agent --json outputs a JSON object on success

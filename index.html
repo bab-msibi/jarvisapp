@@ -109,6 +109,35 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes drift { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 
+  /* ═══ Desktop / wide-screen responsive layout ═══ */
+  .sidebar { display: none; }
+  .content-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; }
+  @media (min-width: 900px) {
+    .device { flex-direction: row; }
+    .sidebar { display: flex; }
+    /* centered, comfortably wide content column */
+    .content-wrap { max-width: 1600px; margin: 0 auto; }
+    /* no floating bottom nav on desktop → reclaim its space */
+    .pad-b { padding-bottom: 44px; }
+    /* auto-fitting card grid for list screens */
+    .grid-cards { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+    /* kanban board fills the width instead of horizontal scroll */
+    .kanban { overflow-x: visible !important; padding-bottom: 44px !important; }
+    .kanban-col { width: auto !important; flex: 1 1 0 !important; min-width: 0; }
+    /* file list flows into two columns instead of one stretched column */
+    .file-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 30px; }
+    /* settings groups sit two-up instead of one stretched column */
+    .settings-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 0 26px; align-items: start; }
+    /* Dashboard split layout */
+    .dash-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; align-items: start; padding: 0 18px; }
+    .dash-col { display: flex; flex-direction: column; min-width: 0; }
+    .dash-col .pad { padding: 0; }
+    .dash-col .quick-row { padding-left: 0; padding-right: 0; }
+  }
+  @media (max-width: 899px) {
+    .dash-grid, .dash-col { display: contents; }
+  }
+
   .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 2s infinite; }
   .anim-screen > * { animation: fadeUp .5s cubic-bezier(.2,.7,.2,1) both; }
   .anim-screen > *:nth-child(2) { animation-delay: .04s; }
@@ -129,6 +158,19 @@
 <script type="text/babel">
 // ui.jsx — shared primitives, icon set, charts
 const { useState, useEffect, useRef, useMemo, createContext, useContext } = React;
+
+// Reactive media-query hook — drives the mobile/desktop layout switch.
+function useMedia(query) {
+  const [matches, setMatches] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setMatches(m.matches);
+    on();
+    m.addEventListener ? m.addEventListener("change", on) : m.addListener(on);
+    return () => { m.removeEventListener ? m.removeEventListener("change", on) : m.removeListener(on); };
+  }, [query]);
+  return matches;
+}
 
 const ICONS = {
   grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
@@ -520,7 +562,7 @@ function LoginScreen({ nav }) {
 
   return (
     <div className="screen" style={{ display: "flex", flexDirection: "column" }}>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 26px" }} className="anim-screen">
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "0 26px", width: "100%", maxWidth: 440, margin: "0 auto" }} className="anim-screen">
         {step === "login" && <>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 34 }}>
             <Logo size={66} />
@@ -601,7 +643,7 @@ function OnboardingScreen({ nav }) {
   const next = () => { setDone(false); setI(i + 1); };
 
   return (
-    <div className="screen" style={{ display: "flex", flexDirection: "column" }}>
+    <div className="screen" style={{ display: "flex", flexDirection: "column", width: "100%", maxWidth: 560, margin: "0 auto" }}>
       <div className="between" style={{ padding: "8px 20px 4px" }}>
         <button className="tap" onClick={() => i === 0 ? nav.replace("login") : (setDone(false), setI(i - 1))} style={{ color: "var(--text-faint)", display: "flex", alignItems: "center" }}><Icon name="chevL" size={22} /></button>
         <span style={{ fontSize: 12.5, fontWeight: 640, color: "var(--text-faint)", letterSpacing: 0.3 }}>STEP {i + 1} OF 6</span>
@@ -896,6 +938,8 @@ function Dashboard({ nav }) {
       />
       <OfflineBanner pageName="Dashboard" />
 
+      <div className="dash-grid">
+      <div className="dash-col">
       {/* Mac card — real data */}
       <div className="pad">
         <div className="card" style={{ padding: 16, marginBottom: 14 }}>
@@ -944,7 +988,7 @@ function Dashboard({ nav }) {
       </div>
 
       {/* Quick actions */}
-      <div style={{ display: "flex", gap: 10, overflowX: "auto", padding: "0 18px 16px", scrollbarWidth: "none" }}>
+      <div className="quick-row" style={{ display: "flex", gap: 10, overflowX: "auto", padding: "0 18px 16px", scrollbarWidth: "none" }}>
         {quicks.map((q, i) => {
           const c = { info: "var(--accent)", purple: "var(--purple)", cyan: "var(--cyan)", ok: "var(--ok)", warn: "var(--warn)" }[q.tone];
           return (
@@ -964,7 +1008,9 @@ function Dashboard({ nav }) {
         <StatTile icon="columns" label="Active tasks" value={runningTasks} tone="purple" spark={[0,0,0,0,0,0,runningTasks]} />
         <StatTile icon="brain" label="Models" value={activeModels} tone="cyan" spark={[0,0,0,0,0,0,activeModels]} />
       </div>
+      </div>{/* end left column */}
 
+      <div className="dash-col">
       {/* Activity feed — real tasks */}
       <div className="pad">
         <Section title="Recent Activity" action="All tasks" onAction={() => nav.go("tasks")} />
@@ -1021,6 +1067,8 @@ function Dashboard({ nav }) {
           </div>
         )}
       </div>
+      </div>{/* end right column */}
+      </div>{/* end dash-grid */}
     </div>
   );
 }
@@ -1534,9 +1582,9 @@ function Agents({ nav }) {
             background: filter === f ? "var(--accent)" : "var(--surface)", color: filter === f ? "#fff" : "var(--text-dim)", border: filter === f ? "none" : "1px solid var(--border)" }}>{f}</button>
         ))}
       </div>
-      <div className="pad" style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+      <div className="pad grid-cards" style={{ display: "flex", flexDirection: "column", gap: 11 }}>
         {list.length ? list.map(a => <AgentCard key={a.id} a={a} onClick={() => setSelected(a)} />) : (
-          <div style={{ textAlign: "center", padding: 40, color: "var(--text-ghost)", fontSize: 14 }}>No agents match filter</div>
+          <div style={{ textAlign: "center", padding: 40, color: "var(--text-ghost)", fontSize: 14, gridColumn: "1 / -1" }}>No agents match filter</div>
         )}
       </div>
     </div>
@@ -1567,9 +1615,9 @@ function Tasks({ nav }) {
     <div className="screen anim-screen" style={{ display: "flex", flexDirection: "column" }}>
       <Header title="Tasks" sub={`${liveTasks.length} total`} right={<ConnectionBadge />} />
       <OfflineBanner pageName="Tasks" />
-      <div style={{ flex: 1, display: "flex", gap: 13, overflowX: "auto", padding: "0 18px 110px", scrollSnapType: "x mandatory", scrollbarWidth: "none" }}>
+      <div className="kanban" style={{ flex: 1, display: "flex", gap: 13, overflowX: "auto", padding: "0 18px 110px", scrollSnapType: "x mandatory", scrollbarWidth: "none" }}>
         {TASK_COLS.map(col => (
-          <div key={col} style={{ width: 244, flexShrink: 0, scrollSnapAlign: "start" }}>
+          <div key={col} className="kanban-col" style={{ width: 244, flexShrink: 0, scrollSnapAlign: "start" }}>
             <div className="between" style={{ padding: "0 4px 12px", position: "sticky", top: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Dot color={{ neutral: "var(--text-faint)", info: "var(--accent)", warn: "var(--warn)", purple: "var(--purple)", ok: "var(--ok)" }[COL_TONE[col]]} size={8} />
@@ -1719,11 +1767,11 @@ function Files({ nav }) {
 
         {/* File list */}
         <Section title={q ? `Results for "${q}"` : folder ? `/${folder}` : "Recent Files"} />
-        <div className="card" style={{ padding: "0 14px" }}>
+        <div className="card file-grid" style={{ padding: "0 14px" }}>
           {loading ? (
-            <div style={{ padding: 32, textAlign: "center", color: "var(--text-ghost)", fontSize: 13 }}>Loading files…</div>
+            <div style={{ padding: 32, textAlign: "center", color: "var(--text-ghost)", fontSize: 13, gridColumn: "1 / -1" }}>Loading files…</div>
           ) : files.length === 0 ? (
-            <div style={{ padding: 32, textAlign: "center", color: "var(--text-ghost)", fontSize: 13 }}>
+            <div style={{ padding: 32, textAlign: "center", color: "var(--text-ghost)", fontSize: 13, gridColumn: "1 / -1" }}>
               {q ? `No files matching "${q}"` : "No files found"}
             </div>
           ) : files.map((f, i) => <FileRow key={f.id} f={f} last={i === files.length - 1} />)}
@@ -1969,6 +2017,7 @@ function Settings({ nav, theme, setTheme }) {
             </div>
           </div>
         </div>
+        <div className="settings-groups">
         {groups.map(g => (
           <div key={g.header} style={{ marginBottom: 18 }}>
             <Section title={g.header} />
@@ -1980,6 +2029,7 @@ function Settings({ nav, theme, setTheme }) {
             </div>
           </div>
         ))}
+        </div>
         <Btn full variant="danger" icon="power" onClick={() => nav.replace("login")} style={{ marginTop: 4 }}>Sign out</Btn>
         <p style={{ textAlign: "center", fontSize: 11.5, color: "var(--text-ghost)", marginTop: 16 }}>Agent Command · v2.4.0 · Build 1182</p>
       </div>
@@ -3310,6 +3360,36 @@ function renderOverlay(screen, nav) {
   return C ? <C nav={nav} /> : null;
 }
 
+function Sidebar({ tab, onTab }) {
+  const item = (id, icon, label, on) => (
+    <button key={id} className="tap" onClick={() => onTab(id)} style={{
+      display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 12, textAlign: "left", width: "100%",
+      background: on ? "color-mix(in oklab, var(--accent) 14%, transparent)" : "transparent",
+      color: on ? "var(--accent)" : "var(--text-dim)", fontWeight: on ? 680 : 560, fontSize: 14 }}>
+      <Icon name={icon} size={20} stroke={on ? 2.2 : 1.9} fill={on ? "color-mix(in oklab, var(--accent) 18%, transparent)" : "none"} />
+      <span>{label}</span>
+    </button>
+  );
+  return (
+    <div className="sidebar glass" style={{ width: 236, flexShrink: 0, height: "100%", flexDirection: "column",
+      borderRight: "1px solid var(--border)", borderTop: "none", borderBottom: "none", borderLeft: "none",
+      padding: "calc(env(safe-area-inset-top, 0px) + 22px) 14px 18px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "0 8px 22px" }}>
+        <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", flexShrink: 0 }}>
+          <Icon name="grid" size={19} stroke={2.2} />
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 760, letterSpacing: -0.4, whiteSpace: "nowrap" }}>Agent Command</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1 }}>
+        {TABS.map(t => item(t.id, t.icon, t.label, tab === t.id))}
+      </div>
+      <div style={{ paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+        {item("mac", "monitor", "Mac Control", tab === "mac")}
+      </div>
+    </div>
+  );
+}
+
 function BottomNav({ tab, onTab }) {
   return (
     <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 100, padding: "0 12px calc(10px + env(safe-area-inset-bottom, 12px))" }}>
@@ -3339,6 +3419,7 @@ function App() {
   const applyDark = (v) => { setDark(v); try { localStorage.setItem("ac_dark", v ? "1" : "0"); } catch {} };
   const deviceRef = useRef(null);
   const [accent, setAccent] = useState("#5b8cff");
+  const isDesktop = useMedia("(min-width: 900px)");
 
   useEffect(() => { localStorage.setItem("ac_nav", JSON.stringify({ mode, tab })); }, [mode, tab]);
 
@@ -3377,17 +3458,37 @@ function App() {
     <div className="device" data-theme={theme} ref={deviceRef}>
       {mode === "login" && <LoginScreen nav={nav} />}
       {mode === "onboarding" && <OnboardingScreen nav={nav} />}
-      {mode === "app" && <>
-        <div style={{ position: "absolute", inset: 0, display: stack.length ? "none" : "flex", flexDirection: "column", paddingTop: "env(safe-area-inset-top, 0px)" }}>
-          {tab === "settings" ? <Settings nav={nav} theme={theme} setTheme={setTheme} /> : <TabScreen nav={nav} />}
-        </div>
-        {overlay && (
-          <div key={stack.length} style={{ position: "absolute", inset: 0, paddingTop: "env(safe-area-inset-top, 0px)", background: "var(--bg)", display: "flex", flexDirection: "column", zIndex: 60 }}>
-            {renderOverlay(overlay.screen, nav)}
+      {mode === "app" && (isDesktop ? (
+        <>
+          <Sidebar tab={tab} onTab={nav.go} />
+          <div style={{ flex: 1, position: "relative", minWidth: 0, overflow: "hidden" }}>
+            <div style={{ position: "absolute", inset: 0, display: stack.length ? "none" : "flex", flexDirection: "column", paddingTop: "env(safe-area-inset-top, 0px)" }}>
+              <div className="content-wrap">
+                {tab === "settings" ? <Settings nav={nav} theme={theme} setTheme={setTheme} /> : <TabScreen nav={nav} />}
+              </div>
+            </div>
+            {overlay && (
+              <div key={stack.length} style={{ position: "absolute", inset: 0, paddingTop: "env(safe-area-inset-top, 0px)", background: "var(--bg)", display: "flex", flexDirection: "column", zIndex: 60 }}>
+                <div className="content-wrap">
+                  {renderOverlay(overlay.screen, nav)}
+                </div>
+              </div>
+            )}
           </div>
-        )}
-        {!stack.length && <BottomNav tab={tab} onTab={nav.go} />}
-      </>}
+        </>
+      ) : (
+        <>
+          <div style={{ position: "absolute", inset: 0, display: stack.length ? "none" : "flex", flexDirection: "column", paddingTop: "env(safe-area-inset-top, 0px)" }}>
+            {tab === "settings" ? <Settings nav={nav} theme={theme} setTheme={setTheme} /> : <TabScreen nav={nav} />}
+          </div>
+          {overlay && (
+            <div key={stack.length} style={{ position: "absolute", inset: 0, paddingTop: "env(safe-area-inset-top, 0px)", background: "var(--bg)", display: "flex", flexDirection: "column", zIndex: 60 }}>
+              {renderOverlay(overlay.screen, nav)}
+            </div>
+          )}
+          {!stack.length && <BottomNav tab={tab} onTab={nav.go} />}
+        </>
+      ))}
     </div>
   );
 }
