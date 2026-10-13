@@ -123,16 +123,19 @@ export function useData(): DashboardData {
 export const useSystem = () =>
   useQuery({ queryKey: ["system"], queryFn: () => apiGet<SystemStats>("/api/system"), refetchInterval: 8000 });
 
-export function useFiles(q: string, folder: string) {
-  const params = new URLSearchParams({ limit: "60" });
+export function useFiles(q: string, folder: string, type: string, sort: string) {
+  const params = new URLSearchParams({ limit: "60", sort });
   if (q) params.set("q", q);
   if (folder) params.set("folder", folder);
+  if (type) params.set("type", type);
   return useQuery({
-    queryKey: ["files", q, folder],
+    queryKey: ["files", q, folder, type, sort],
     queryFn: () => apiGet<FilesResponse>(`/api/files?${params}`),
     placeholderData: keepPreviousData,
   });
 }
+
+export const useRevealFile = () => useMutation({ mutationFn: (id: string) => apiPost<{ ok: true }>("/api/files/reveal", { id }) });
 
 export const useMarket = () =>
   useQuery({ queryKey: ["market"], queryFn: () => apiGet<MarketResponse>("/api/market"), refetchInterval: 60000 });
