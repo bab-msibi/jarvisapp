@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQueries, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { apiGet, apiPost, relTime } from "./api";
 import type {
   Agent, CronJob, DeviceView, ExecResult, FilesResponse, GatewayHealth, MarketResponse, McpStatus, Model, ModelConfig,
@@ -123,14 +123,21 @@ export function useData(): DashboardData {
 export const useSystem = () =>
   useQuery({ queryKey: ["system"], queryFn: () => apiGet<SystemStats>("/api/system"), refetchInterval: 8000 });
 
-export function useFiles(q: string, folder: string, type: string, sort: string) {
-  const params = new URLSearchParams({ limit: "60", sort });
-  if (q) params.set("q", q);
-  if (folder) params.set("folder", folder);
-  if (type) params.set("type", type);
-  return useQuery({
-    queryKey: ["files", q, folder, type, sort],
-    queryFn: () => apiGet<FilesResponse>(`/api/files?${params}`),
+const FILES_PAGE = 60;
+
+export function useFiles(q: string, folder: string, type: string, sort: string, content: boolean) {
+  return useInfiniteQuery({
+    queryKey: ["files", q, folder, type, sort, content],
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ limit: String(FILES_PAGE), offset: String(pageParam), sort });
+      if (q) params.set("q", q);
+      if (q && content) params.set("content", "1");
+      if (folder) params.set("folder", folder);
+      if (type) params.set("type", type);
+      return apiGet<FilesResponse>(`/api/files?${params}`);
+    },
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.offset + last.files.length < last.total ? last.offset + last.files.length : undefined),
     placeholderData: keepPreviousData,
   });
 }
