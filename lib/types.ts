@@ -44,7 +44,8 @@ export interface OpenClawStatus {
 export interface CronJob {
   id?: string; name: string; agentId?: string; enabled?: boolean;
   schedule?: { expr?: string; tz?: string };
-  state?: { lastRunAtMs?: number; nextRunAtMs?: number; lastRunStatus?: string; consecutiveErrors?: number };
+  delivery?: { mode?: string; channel?: string };
+  state?: { lastRunAtMs?: number; nextRunAtMs?: number; lastRunStatus?: string; consecutiveErrors?: number; lastDeliveryStatus?: string };
 }
 export interface RawTask {
   taskId: string; status: string; label?: string; task?: string; agentId?: string; endedAt?: number; error?: string;

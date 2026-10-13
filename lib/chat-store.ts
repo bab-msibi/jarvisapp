@@ -81,3 +81,28 @@ export function newChatSession(agentId: string): ChatSession {
 export function latestSession(sessions: ChatSession[]) {
   return sessions.reduce<ChatSession | undefined>((best, s) => (!best || (s.updatedAt ?? s.createdAt) > (best.updatedAt ?? best.createdAt) ? s : best), undefined);
 }
+
+// ── Unread replies (replies that landed while you weren't looking at the chat) ──
+
+export interface UnreadReply { jobId: string; agentId: string; sessionId: string; at: number; preview: string; error: boolean }
+const UNREAD_KEY = "jarvis:chat:unread";
+let unread: UnreadReply[] | null = null;
+
+export function getUnread(): UnreadReply[] {
+  return (unread ??= read<UnreadReply[]>(UNREAD_KEY, []));
+}
+
+export function addUnread(u: UnreadReply) {
+  unread = [...getUnread().filter((x) => x.jobId !== u.jobId), u].slice(-50);
+  write(UNREAD_KEY, unread);
+  emit();
+}
+
+export function clearUnread(agentId: string) {
+  if (!getUnread().some((u) => u.agentId === agentId)) return;
+  unread = getUnread().filter((u) => u.agentId !== agentId);
+  write(UNREAD_KEY, unread);
+  emit();
+}
+
+export const useUnreadReplies = () => useSyncExternalStore(subscribe, getUnread, () => []);

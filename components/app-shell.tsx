@@ -7,7 +7,8 @@ import { LoginScreen, OnboardingScreen } from "@/components/screens/auth";
 import { Dashboard } from "@/components/screens/dashboard";
 import { Analytics } from "@/components/screens/analytics";
 import { DefaultModel } from "@/components/screens/default-model";
-import { CreateAgent, CreateTask, FileDetail, Models, MultiAgent, Notifications, TaskDetail, Upload } from "@/components/screens/details";
+import { CreateAgent, CreateTask, FileDetail, Models, MultiAgent, TaskDetail, Upload } from "@/components/screens/details";
+import { Notifications } from "@/components/screens/notifications";
 import { Devices } from "@/components/screens/devices";
 import { OpenClaw } from "@/components/screens/openclaw";
 import { Profile } from "@/components/screens/profile";
@@ -22,6 +23,7 @@ import { Terminal } from "@/components/screens/terminal";
 import { Trading } from "@/components/screens/trading";
 import { Icon, useMedia, type IconName } from "@/components/ui/primitives";
 import type { Nav, OverlayScreen, ScreenProps, TabId } from "@/lib/nav";
+import { useNotifications } from "@/lib/notifications";
 import { parsePath, toPath, type Route } from "@/lib/routes";
 
 type Mode = "login" | "onboarding" | "app";
@@ -57,14 +59,15 @@ function renderOverlay(screen: OverlayScreen, nav: Nav) {
   return C ? <C nav={nav} /> : null;
 }
 
-function Sidebar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
+function Sidebar({ tab, onTab, badges }: { tab: TabId; onTab: (t: TabId) => void; badges: Partial<Record<TabId, boolean>> }) {
   const item = (id: TabId, icon: IconName, label: string, on: boolean) => (
     <button key={id} className="tap" onClick={() => onTab(id)} style={{
       display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 12, textAlign: "left", width: "100%",
       background: on ? "color-mix(in oklab, var(--accent) 14%, transparent)" : "transparent",
       color: on ? "var(--accent)" : "var(--text-dim)", fontWeight: on ? 680 : 560, fontSize: 14 }}>
       <Icon name={icon} size={20} stroke={on ? 2.2 : 1.9} fill={on ? "color-mix(in oklab, var(--accent) 18%, transparent)" : "none"} />
-      <span>{label}</span>
+      <span style={{ flex: 1 }}>{label}</span>
+      {badges[id] && <span style={{ width: 8, height: 8, borderRadius: 4, background: "var(--err)" }} />}
     </button>
   );
   return (
@@ -87,7 +90,7 @@ function Sidebar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
   );
 }
 
-function BottomNav({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
+function BottomNav({ tab, onTab, badges }: { tab: TabId; onTab: (t: TabId) => void; badges: Partial<Record<TabId, boolean>> }) {
   return (
     <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 100, padding: "0 12px calc(10px + env(safe-area-inset-bottom, 12px))" }}>
       <div className="glass" style={{ display: "flex", borderRadius: 26, padding: "9px 6px 8px" }}>
@@ -97,6 +100,7 @@ function BottomNav({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
             <button key={t.id} className="tap" onClick={() => onTab(t.id)} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "4px 0", color: on ? "var(--accent)" : "var(--text-faint)" }}>
               <div style={{ position: "relative" }}>
                 <Icon name={t.icon} size={22} stroke={on ? 2.2 : 1.9} fill={on ? "color-mix(in oklab, var(--accent) 18%, transparent)" : "none"} />
+                {badges[t.id] && <span style={{ position: "absolute", top: -1, right: -3, width: 8, height: 8, borderRadius: 4, background: "var(--err)", boxShadow: "0 0 0 2px var(--bg)" }} />}
               </div>
               <span style={{ fontSize: 9.5, fontWeight: on ? 680 : 560, letterSpacing: -0.1 }}>{t.label}</span>
             </button>
@@ -167,6 +171,7 @@ function App() {
       setMode("app");
       if (tb !== tab || stack.length) navigate({ tab: tb, stack: [] }, "push");
     },
+    openPath: (path) => { setMode("app"); navigate(parsePath(path), "push"); },
     replace: (target) => {
       if (target === "login" || target === "onboarding") { setMode(target); return; }
       setMode("app");
@@ -184,6 +189,11 @@ function App() {
   const activeChatAgentId = top?.screen === "agentChat" ? top.params.id ?? null : null;
   const dismissToast = useCallback((id: string) => setToasts(ts => ts.filter(t => t.id !== id)), []);
 
+  // New notifications: a dot on Home (where the bell is) and a count in the browser tab title
+  const { unseen } = useNotifications();
+  const badges: Partial<Record<TabId, boolean>> = { dashboard: unseen.length > 0 };
+  useEffect(() => { document.title = unseen.length ? `(${unseen.length}) Agent Command` : "Agent Command"; }, [unseen.length]);
+
   const TabScreen = TAB_SCREENS[tab as Exclude<TabId, "settings">];
   const overlay = stack.length ? stack[stack.length - 1] : null;
 
@@ -199,7 +209,7 @@ function App() {
       {mode === "onboarding" && <OnboardingScreen nav={nav} />}
       {mode === "app" && (isDesktop ? (
         <>
-          <Sidebar tab={tab} onTab={nav.go} />
+          <Sidebar tab={tab} onTab={nav.go} badges={badges} />
           <div style={{ flex: 1, position: "relative", minWidth: 0, overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, display: stack.length ? "none" : "flex", flexDirection: "column", paddingTop: "env(safe-area-inset-top, 0px)" }}>
               <div className="content-wrap">
@@ -225,7 +235,7 @@ function App() {
               {renderOverlay(overlay.screen, nav)}
             </div>
           )}
-          {!stack.length && <BottomNav tab={tab} onTab={nav.go} />}
+          {!stack.length && <BottomNav tab={tab} onTab={nav.go} badges={badges} />}
         </>
       ))}
     </div>

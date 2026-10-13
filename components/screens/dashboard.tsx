@@ -4,6 +4,7 @@ import { ConnectionBadge, OfflineBanner } from "@/components/ui/connection";
 import { Dot, GhostBtn, Header, Icon, MiniBars, Ring, Section, type IconName, type Tone } from "@/components/ui/primitives";
 import { relTime } from "@/lib/api";
 import type { ScreenProps } from "@/lib/nav";
+import { useNotifications } from "@/lib/notifications";
 import { useData } from "@/lib/queries";
 
 const TONE_COLOR: Record<string, string> = { info: "var(--accent)", ok: "var(--ok)", purple: "var(--purple)", cyan: "var(--cyan)", warn: "var(--warn)", err: "var(--err)", neutral: "var(--text-faint)" };
@@ -38,6 +39,7 @@ function MetricRing({ icon, label, value, color }: { icon: IconName; label: stri
 export function Dashboard({ nav }: ScreenProps) {
   const d = useData();
   const { sys, agents, tasks, models, sessions } = d;
+  const { unseen } = useNotifications();
 
   const agentCount = agents.length;
   const runningTasks = tasks.filter(t => t.col === "In Progress").length;
@@ -73,7 +75,7 @@ export function Dashboard({ nav }: ScreenProps) {
         right={
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <ConnectionBadge />
-            <GhostBtn icon="bell" onClick={() => nav.push("notifications")} />
+            <GhostBtn icon="bell" badge={unseen.length > 0} onClick={() => nav.push("notifications")} />
           </div>
         }
       />

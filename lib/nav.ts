@@ -18,6 +18,8 @@ export interface Nav {
   pop: () => void;
   go: (tab: TabId) => void;
   replace: (target: TabId | "login" | "onboarding") => void;
+  /** Open any screen by its app path, e.g. "/settings/devices" */
+  openPath: (path: string) => void;
 }
 
 export interface ScreenProps { nav: Nav }

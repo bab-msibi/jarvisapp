@@ -13,7 +13,6 @@ export interface MockTask {
   id: string; title: string; agent: string; color: string; priority: string; due: string; prog?: number; block?: string;
 }
 export interface MockFile { id: string; name: string; type: string; size: string; agent: string; color: string; time: string; ai: boolean }
-export interface Notif { id: string; icon: IconName; tone: Tone; title: string; text: string; time: string; unread: boolean }
 
 export const AGENTS: MockAgent[] = [
   { id: "research", name: "Research Agent", color: "blue", icon: "search", status: "running", task: "Compiling market analysis on wearables", model: "Qwen2.5-72B", cpu: 34, mem: 4.2, last: "now", priority: "High" },
@@ -79,13 +78,4 @@ export const MODELS: Model[] = [
   { id: "m4", name: "Mistral-Large-2411", family: "Mistral", size: "44 GB", status: "active", agents: 1, vram: 22, ctx: "128K" },
   { id: "m5", name: "Gemma-2-27B", family: "Gemma", size: "16 GB", status: "loaded", agents: 1, vram: 0, ctx: "8K" },
   { id: "m6", name: "DeepSeek-R1-Distill", family: "DeepSeek", size: "9 GB", status: "available", agents: 0, vram: 0, ctx: "32K" },
-];
-
-export const NOTIFS: Notif[] = [
-  { id: "n1", icon: "check", tone: "ok", title: "Task completed", text: "Coding Agent finished “Refactor auth module”", time: "2m ago", unread: true },
-  { id: "n2", icon: "cpu", tone: "err", title: "High GPU usage", text: "Mac Studio VRAM at 91% — consider stopping a model", time: "24m ago", unread: true },
-  { id: "n3", icon: "doc", tone: "info", title: "New file generated", text: "market-analysis-q2.pdf is ready to download", time: "6m ago", unread: true },
-  { id: "n4", icon: "flow", tone: "warn", title: "Workflow failed", text: "“Deploy staging” stopped at QA approval step", time: "38m ago", unread: false },
-  { id: "n5", icon: "power", tone: "neutral", title: "Model stopped", text: "Gemma-2-27B was unloaded to free memory", time: "1h ago", unread: false },
-  { id: "n6", icon: "shield", tone: "purple", title: "New device approved", text: "iPhone 16 Pro added to trusted devices", time: "3h ago", unread: false },
 ];
