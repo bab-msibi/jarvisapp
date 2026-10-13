@@ -25,7 +25,7 @@ case "${1:-status}" in
     echo "Restarting (rebuilds first if the code changed)."
     ;;
   status)
-    launchctl print "$DOMAIN/$LABEL" 2>/dev/null | grep -E "^\s+(state|pid|last exit code)" || echo "Not installed."
+    launchctl print "$DOMAIN/$LABEL" 2>/dev/null | grep -E "^\t(state|pid|last exit code) " || echo "Not installed."
     curl -s -m 3 -o /dev/null -w "HTTP %{http_code} from http://127.0.0.1:3000/api/health\n" http://127.0.0.1:3000/api/health || echo "Server not responding."
     ;;
   logs)
