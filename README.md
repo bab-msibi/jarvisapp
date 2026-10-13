@@ -64,7 +64,7 @@ Requests that arrive through Cloudflare Tunnel (identified by Cloudflare's `cf-c
 | `/api/sessions` | GET | `openclaw sessions list --json` |
 | `/api/models` | GET | `openclaw models list` (parsed table) |
 | `/api/cron` | GET | `openclaw cron list --json` |
-| `/api/system` | GET | macOS system stats (`top`, `vm_stat`, `df`, `pmset`, …) |
+| `/api/system` | GET | macOS system stats (`top`, `vm_stat`, `df`, `pmset`, `ioreg` for GPU load, …) plus `history`: CPU/RAM/GPU every 30s for the last 30 min, sampled in the background since the server started |
 | `/api/files` | GET | Recent files in `~/Desktop`, `~/Downloads`, `~/Documents`, `~/Pictures` and the agent workspace. Params: `q`, `folder`, `type` (image/doc/code/media/archive), `sort` (recent/size/name), `limit`, `offset`, `content=1` (also match file contents: Spotlight, plus a direct read of the workspace's text files). The disk scan is cached for 30s |
 | `/api/files/raw` | GET | Streams one file by `id` (inline for images/PDF/text, else download; `download=1` forces it). Ids resolving outside the indexed folders are refused |
 | `/api/files/reveal` | POST | `{ id }` — selects the file in Finder. Local requests only |

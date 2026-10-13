@@ -4,12 +4,13 @@ import type { recentFiles } from "@/lib/server/files";
 import type { marketData } from "@/lib/server/market";
 import type { mcpStatus } from "@/lib/server/mcp";
 import type { listModels } from "@/lib/server/openclaw";
+import type { Sample } from "@/lib/server/history";
 import type { systemStats } from "@/lib/server/system";
 import type { execCommand } from "@/lib/server/terminal";
 import type { view } from "@/lib/server/devices";
 import type { appInfo, gatewayHealth, modelConfig, tunnelStatus } from "@/lib/server/insights";
 
-export type SystemStats = Awaited<ReturnType<typeof systemStats>>;
+export type SystemStats = Awaited<ReturnType<typeof systemStats>> & { history: Sample[] };
 export type FilesResponse = Awaited<ReturnType<typeof recentFiles>>;
 export type FileItem = FilesResponse["files"][number];
 export type MarketResponse = ReturnType<typeof marketData>;
@@ -49,6 +50,7 @@ export interface CronJob {
 }
 export interface RawTask {
   taskId: string; status: string; label?: string; task?: string; agentId?: string; endedAt?: number; error?: string;
+  createdAt?: number; lastEventAt?: number;
 }
 
 // UI-side shapes (adapted from the raw data)
@@ -60,7 +62,7 @@ export interface Agent {
 }
 export interface Task {
   id: string; title: string; agent: string; color: string; priority: string; due: string;
-  col: string; prog?: number; block?: string;
+  col: string; prog?: number; block?: string; ts?: number;
 }
 export interface Model {
   id: string; name: string; family: string; size: string; status: "active" | "loaded" | "available";
