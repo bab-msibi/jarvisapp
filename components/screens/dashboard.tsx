@@ -3,14 +3,29 @@
 import { ConnectionBadge, OfflineBanner } from "@/components/ui/connection";
 import { Dot, GhostBtn, Header, Icon, MiniBars, Ring, Section, type IconName, type Tone } from "@/components/ui/primitives";
 import { relTime } from "@/lib/api";
-import type { ScreenProps } from "@/lib/nav";
+import type { Nav, ScreenProps } from "@/lib/nav";
 import { useNotifications } from "@/lib/notifications";
-import { useData } from "@/lib/queries";
+import { useData, useGateway, useModelConfig, useTunnel } from "@/lib/queries";
+import type { CronJob, Session, SystemStats } from "@/lib/types";
 
 const TONE_COLOR: Record<string, string> = { info: "var(--accent)", ok: "var(--ok)", purple: "var(--purple)", cyan: "var(--cyan)", warn: "var(--warn)", err: "var(--err)", neutral: "var(--text-faint)" };
 
-export function StatTile({ icon, label, value, tone = "info", spark }: {
-  icon: IconName; label: string; value: number | string; tone?: Tone; spark?: number[];
+// Amber from 75%, red from 90%
+const levelColor = (v: number | null | undefined, base: string) => (v == null ? base : v >= 90 ? "var(--err)" : v >= 75 ? "var(--warn)" : base);
+
+function untilTime(ms?: number) {
+  if (!ms) return "–";
+  const s = Math.max(Math.floor((ms - Date.now()) / 1000), 0);
+  if (s < 60) return "now";
+  if (s < 3600) return `in ${Math.floor(s / 60)}m`;
+  if (s < 86400) return `in ${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  return `in ${Math.floor(s / 86400)}d`;
+}
+
+const fmtTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n));
+
+export function StatTile({ icon, label, value, tone = "info", spark, sub }: {
+  icon: IconName; label: string; value: number | string; tone?: Tone; spark?: number[]; sub?: string;
 }) {
   const tmap = TONE_COLOR;
   return (
@@ -21,14 +36,15 @@ export function StatTile({ icon, label, value, tone = "info", spark }: {
       </div>
       <div style={{ fontSize: 25, fontWeight: 760, letterSpacing: -0.8, marginTop: 10, lineHeight: 1 }}>{value}</div>
       <div style={{ fontSize: 12, color: "var(--text-faint)", fontWeight: 540, marginTop: 4 }}>{label}</div>
+      {sub && <div className="clip" style={{ fontSize: 11, color: "var(--text-ghost)", marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
 
-function MetricRing({ icon, label, value, color }: { icon: IconName; label: string; value: number; color: string }) {
+function MetricRing({ icon, label, value, color }: { icon: IconName; label: string; value: number | null; color: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, flex: 1 }}>
-      <Ring value={value} size={58} stroke={5} color={color} label={`${value}%`} />
+      <Ring value={value ?? 0} size={58} stroke={5} color={levelColor(value, color)} label={value == null ? "–" : `${value}%`} />
       <div style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--text-faint)" }}>
         <Icon name={icon} size={13} stroke={2} /><span style={{ fontSize: 11, fontWeight: 600 }}>{label}</span>
       </div>
@@ -36,25 +52,148 @@ function MetricRing({ icon, label, value, color }: { icon: IconName; label: stri
   );
 }
 
+// CPU / RAM / GPU over the last 30 minutes, on a fixed 0–100% scale
+function HistoryChart({ history }: { history: SystemStats["history"] }) {
+  if (history.length < 2) {
+    return <div style={{ fontSize: 11.5, color: "var(--text-ghost)", padding: "10px 0 2px" }}>Collecting history… (a point every 30s)</div>;
+  }
+  const W = 300, H = 56;
+  const t0 = history[0].t, span = history.at(-1)!.t - t0 || 1;
+  const line = (pick: (s: SystemStats["history"][number]) => number | null) =>
+    history.map(s => [((s.t - t0) / span) * W, H - ((pick(s) ?? 0) / 100) * H].map(n => n.toFixed(1)).join(",")).join(" ");
+  const series = [
+    { key: "CPU", color: "var(--accent)", pts: line(s => s.cpu), last: history.at(-1)!.cpu },
+    { key: "RAM", color: "var(--purple)", pts: line(s => s.ram), last: history.at(-1)!.ram },
+    ...(history.some(s => s.gpu != null) ? [{ key: "GPU", color: "var(--cyan)", pts: line(s => s.gpu), last: history.at(-1)!.gpu }] : []),
+  ];
+  const mins = Math.round(span / 60000);
+  return (
+    <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+      <div className="between" style={{ marginBottom: 6 }}>
+        <div style={{ display: "flex", gap: 12 }}>
+          {series.map(s => (
+            <span key={s.key} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-faint)", fontWeight: 560 }}>
+              <Dot color={s.color} size={6} />{s.key} <span className="mono">{s.last ?? "–"}%</span>
+            </span>
+          ))}
+        </div>
+        <span style={{ fontSize: 11, color: "var(--text-ghost)" }}>last {mins}m</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: "block", width: "100%", height: 56 }} aria-label="CPU, RAM and GPU history">
+        {[25, 50, 75].map(y => <line key={y} x1={0} x2={W} y1={H - (y / 100) * H} y2={H - (y / 100) * H} stroke="var(--border)" strokeWidth={1} vectorEffect="non-scaling-stroke" />)}
+        {series.map(s => <polyline key={s.key} points={s.pts} fill="none" stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />)}
+      </svg>
+    </div>
+  );
+}
+
+function StatusPill({ ok, warn, label, onClick }: { ok: boolean | null; warn?: boolean; label: string; onClick: () => void }) {
+  const color = ok == null ? "var(--text-ghost)" : !ok ? "var(--err)" : warn ? "var(--warn)" : "var(--ok)";
+  return (
+    <button className="tap" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 100, flexShrink: 0,
+      background: "var(--surface)", border: "1px solid var(--border)", fontSize: 12, fontWeight: 600, color: "var(--text-dim)" }}>
+      <Dot color={color} size={7} />{label}
+    </button>
+  );
+}
+
+function StatusStrip({ nav }: { nav: Nav }) {
+  const { data: gw, isError: gwErr } = useGateway();
+  const { data: mc } = useModelConfig();
+  const { data: tunnel } = useTunnel();
+  const discord = gw?.channels?.find(c => c.name === "discord");
+  const model = mc?.defaultModel?.split("/").pop();
+  return (
+    <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 18px 14px", scrollbarWidth: "none" }}>
+      <StatusPill ok={gwErr ? false : gw ? gw.ok : null} warn={gw?.degraded}
+        label={gwErr ? "Gateway down" : gw ? `Gateway ${gw.degraded ? "degraded" : "OK"} · ${gw.latencyMs}ms` : "Gateway…"} onClick={() => nav.push("openclaw")} />
+      {discord && <StatusPill ok={discord.connected} label={`Discord ${discord.connected ? "connected" : "offline"}`} onClick={() => nav.push("openclaw")} />}
+      <StatusPill ok={mc ? !!model : null} label={model ? `Model ${model}` : "Model…"} onClick={() => nav.push("defaultModel")} />
+      {tunnel?.configured && (
+        <StatusPill ok={tunnel.running && tunnel.reachable} warn={!tunnel.accessProtected}
+          label={tunnel.running && tunnel.reachable ? "Remote access on" : "Remote access down"} onClick={() => nav.go("settings")} />
+      )}
+    </div>
+  );
+}
+
+function UpNext({ crons, nav }: { crons: CronJob[]; nav: Nav }) {
+  const upcoming = crons.filter(c => c.enabled !== false && c.state?.nextRunAtMs).sort((a, b) => a.state!.nextRunAtMs! - b.state!.nextRunAtMs!).slice(0, 4);
+  if (!upcoming.length) return null;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <Section title="Up Next" />
+      <div className="card" style={{ padding: "4px 14px" }}>
+        {upcoming.map((c, i) => {
+          const st = c.state!;
+          const failed = (st.consecutiveErrors ?? 0) > 0 || (st.lastRunStatus && st.lastRunStatus !== "ok");
+          const at = new Date(st.nextRunAtMs!).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit", hour12: false });
+          return (
+            <button key={c.id || c.name} className="tap" onClick={() => c.agentId && nav.push("agentDetail", { id: c.agentId })}
+              style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", width: "100%", minWidth: 0, textAlign: "left",
+                borderBottom: i < upcoming.length - 1 ? "1px solid var(--border)" : "none" }}>
+              <div style={{ width: 30, height: 30, borderRadius: 9, background: "var(--surface-2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "var(--purple)" }}>
+                <Icon name="clock" size={15} stroke={2} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="clip" style={{ fontSize: 13, fontWeight: 640 }}>{c.name}</div>
+                <div className="clip" style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 1 }}>
+                  {st.lastRunAtMs
+                    ? <><span style={{ color: failed ? "var(--err)" : "var(--ok)", fontWeight: 600 }}>{failed ? `✕ failed${(st.consecutiveErrors ?? 0) > 1 ? ` ×${st.consecutiveErrors}` : ""}` : "✓ ok"}</span> · last run {relTime(st.lastRunAtMs)}</>
+                    : "Never run"}
+                </div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 620, color: "var(--text-dim)" }}>{untilTime(st.nextRunAtMs)}</div>
+                <div className="mono" style={{ fontSize: 11, color: "var(--text-ghost)", marginTop: 1 }}>{at}</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const SESSION_KIND: Record<string, string> = { direct: "Direct chat", cron: "Cron job", group: "Discord group", "spawn-child": "Sub-agent" };
+
+// "agent:main:jarvisapp-mv6o9dfm" → "Jarvis app"; "agent:main:main" → "Main"
+function sessionTitle(s: Session) {
+  const kind = SESSION_KIND[s.kind ?? ""] || s.kind || "Session";
+  const tail = s.key?.split(":").slice(2).join(":") || "";
+  if (tail.startsWith("jarvisapp")) return "Jarvis app chat";
+  if (tail === "main") return `${kind} · main`;
+  if (tail.startsWith("cron")) return "Cron run";
+  return kind;
+}
+
 export function Dashboard({ nav }: ScreenProps) {
   const d = useData();
-  const { sys, agents, tasks, models, sessions } = d;
+  const { sys, agents, tasks, models, sessions, crons, ready } = d;
   const { unseen } = useNotifications();
 
-  const agentCount = agents.length;
+  const runningAgents = agents.filter(a => a.status === "running").length;
   const runningTasks = tasks.filter(t => t.col === "In Progress").length;
+  const failedTasks = tasks.filter(t => t.color === "amber").length;
   const activeModels = models.filter(m => m.status === "active" || m.status === "loaded").length;
+  const defaultModel = models.find(m => m.status === "active")?.name;
 
-  // Activity feed from real tasks + recent sessions
-  const activityItems = tasks.slice(0, 6).map((t): { id: string; label: string; text: string; time: string; tone: Tone; icon: IconName; meta: string } => ({
-    id: t.id,
-    label: t.agent || "Agent",
-    text: t.title,
-    time: t.due,
-    tone: t.col === "Completed" ? "ok" : t.col === "In Progress" ? "info" : t.priority === "High" ? "err" : "neutral",
-    icon: t.col === "Completed" ? "check" : t.col === "In Progress" ? "play" : t.block ? "warn" : "clock",
-    meta: t.block || "",
-  }));
+  // Timeline: tasks plus cron runs, newest first
+  type Item = { id: string; label: string; text: string; ts?: number; tone: Tone; icon: IconName; meta: string };
+  const activityItems: Item[] = [
+    ...tasks.map((t): Item => ({
+      id: `t:${t.id}`, label: t.agent || "Agent", text: t.title, ts: t.ts,
+      tone: t.col === "Completed" ? "ok" : t.col === "In Progress" ? "info" : t.color === "amber" ? "err" : "neutral",
+      icon: t.col === "Completed" ? "check" : t.col === "In Progress" ? "play" : t.block ? "warn" : "clock",
+      meta: t.block || "",
+    })),
+    // Cron runs are usually logged as tasks too; only add the ones that aren't
+    ...crons.filter(c => c.state?.lastRunAtMs && !tasks.some(t => t.title === c.name)).map((c): Item => {
+      const ok = c.state!.lastRunStatus === "ok";
+      return { id: `c:${c.id || c.name}`, label: `${c.agentId || "Agent"} · cron`, text: c.name, ts: c.state!.lastRunAtMs,
+        tone: ok ? "ok" : "err", icon: ok ? "check" : "warn", meta: ok ? "" : `Last run ${c.state!.lastRunStatus || "failed"}` };
+    }),
+  ].sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0)).slice(0, 6);
 
   const quicks: { icon: IconName; label: string; tone: Tone; go: () => void }[] = [
     { icon: "plus", label: "Create Agent", tone: "info", go: () => nav.push("createAgent") },
@@ -66,6 +205,8 @@ export function Dashboard({ nav }: ScreenProps) {
 
   const macOnline = !!sys;
   const macStatus = sys ? `Online · up ${sys.uptime} · ${sys.ip}` : "Connecting…";
+  const lowBattery = sys?.battPct != null && sys.battPct <= 20;
+  const recentSessions = [...sessions].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, 4);
 
   return (
     <div className="screen pad-b anim-screen">
@@ -80,6 +221,7 @@ export function Dashboard({ nav }: ScreenProps) {
         }
       />
       <OfflineBanner pageName="Dashboard" />
+      <StatusStrip nav={nav} />
 
       <div className="dash-grid">
       <div className="dash-col">
@@ -87,15 +229,15 @@ export function Dashboard({ nav }: ScreenProps) {
       <div className="pad">
         <div className="card" style={{ padding: 16, marginBottom: 14 }}>
           <div className="between" style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-              <div style={{ width: 42, height: 42, borderRadius: 12, background: "var(--surface-2)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: "var(--surface-2)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text)", flexShrink: 0 }}>
                 <Icon name="monitor" size={22} stroke={1.8} />
               </div>
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 15.5, fontWeight: 680, letterSpacing: -0.3 }}>{sys?.model || "Mac"}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                   <Dot pulse={macOnline} color={macOnline ? "var(--ok)" : "var(--text-ghost)"} />
-                  <span style={{ fontSize: 12, color: "var(--text-faint)", fontWeight: 540 }}>{macStatus}</span>
+                  <span className="clip" style={{ fontSize: 12, color: "var(--text-faint)", fontWeight: 540 }}>{macStatus}</span>
                 </div>
               </div>
             </div>
@@ -104,29 +246,31 @@ export function Dashboard({ nav }: ScreenProps) {
             </button>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            <MetricRing icon="cpu" label="CPU" value={sys?.cpuPct ?? 0} color="var(--accent)" />
-            <MetricRing icon="ram" label="RAM" value={sys?.ramPct ?? 0} color="var(--purple)" />
-            <MetricRing icon="gpu" label="GPU" value={0} color="var(--cyan)" />
-            <MetricRing icon="disk" label="Disk" value={sys?.diskPct ?? 0} color="var(--ok)" />
+            <MetricRing icon="cpu" label="CPU" value={sys ? sys.cpuPct : null} color="var(--accent)" />
+            <MetricRing icon="ram" label="RAM" value={sys ? sys.ramPct : null} color="var(--purple)" />
+            <MetricRing icon="gpu" label="GPU" value={sys?.gpuPct ?? null} color="var(--cyan)" />
+            <MetricRing icon="disk" label="Disk" value={sys ? sys.diskPct : null} color="var(--ok)" />
           </div>
           {sys && (
-            <div style={{ marginTop: 12, display: "flex", gap: 14, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+            <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: "6px 14px", paddingTop: 12, borderTop: "1px solid var(--border)" }}>
               {sys.battPct !== null && (
-                <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "var(--text-faint)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: lowBattery ? 650 : 400,
+                  color: lowBattery ? (sys.charging ? "var(--warn)" : "var(--err)") : "var(--text-faint)" }}>
                   <Icon name="battery" size={13} stroke={2} />
-                  <span>{sys.battPct}% {sys.charging ? "· Charging" : ""}</span>
+                  <span>{sys.battPct}%{sys.charging ? " · Charging" : lowBattery ? " · Low battery" : ""}</span>
                 </div>
               )}
               <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "var(--text-faint)" }}>
                 <Icon name="cpu" size={13} stroke={2} />
                 <span className="mono">{sys.load1} load</span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "var(--text-faint)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: sys.ramPct >= 75 ? levelColor(sys.ramPct, "") : "var(--text-faint)" }}>
                 <Icon name="ram" size={13} stroke={2} />
                 <span>{sys.ramUsedGb} / {sys.ramTotalGb} GB</span>
               </div>
             </div>
           )}
+          {sys && <HistoryChart history={sys.history ?? []} />}
         </div>
       </div>
 
@@ -145,17 +289,22 @@ export function Dashboard({ nav }: ScreenProps) {
         })}
       </div>
 
-      {/* Stat tiles — real counts */}
+      {/* Stat tiles — real counts; "–" until each source has answered */}
       <div className="pad" style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-        <StatTile icon="robot" label="Agents" value={agentCount} tone="info" spark={[1,1,1,1,1,1,agentCount]} />
-        <StatTile icon="columns" label="Active tasks" value={runningTasks} tone="purple" spark={[0,0,0,0,0,0,runningTasks]} />
-        <StatTile icon="brain" label="Models" value={activeModels} tone="cyan" spark={[0,0,0,0,0,0,activeModels]} />
+        <StatTile icon="robot" label="Agents" value={ready.agents ? agents.length : "–"} tone="info"
+          sub={ready.agents ? `${runningAgents} running` : undefined} />
+        <StatTile icon="columns" label="Active tasks" value={ready.tasks ? runningTasks : "–"} tone="purple"
+          sub={ready.tasks ? (failedTasks ? `${failedTasks} failed · ${tasks.length} total` : `${tasks.length} total`) : undefined} />
+        <StatTile icon="brain" label="Models" value={ready.models ? activeModels : "–"} tone="cyan"
+          sub={ready.models && defaultModel ? `default ${defaultModel}` : undefined} />
       </div>
       </div>{/* end left column */}
 
       <div className="dash-col">
-      {/* Activity feed — real tasks */}
       <div className="pad">
+        <UpNext crons={crons} nav={nav} />
+
+        {/* Activity feed — tasks and cron runs */}
         <Section title="Recent Activity" action="All tasks" onAction={() => nav.go("tasks")} />
         <div className="card" style={{ padding: "4px 14px" }}>
           {activityItems.length > 0 ? activityItems.map((a, i) => {
@@ -168,42 +317,48 @@ export function Dashboard({ nav }: ScreenProps) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="between" style={{ gap: 8 }}>
                     <span style={{ fontSize: 13, fontWeight: 640, letterSpacing: -0.1 }}>{a.label}</span>
-                    <span style={{ fontSize: 11.5, color: "var(--text-ghost)", fontWeight: 540, flexShrink: 0 }}>{a.time}</span>
+                    <span style={{ fontSize: 11.5, color: "var(--text-ghost)", fontWeight: 540, flexShrink: 0 }}>{relTime(a.ts)}</span>
                   </div>
-                  <div style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 2, lineHeight: 1.35 }}>{a.text}</div>
+                  <div style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 2, lineHeight: 1.35, overflowWrap: "anywhere" }}>{a.text}</div>
                   {a.meta && <span className="mono" style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 3, display: "inline-block" }}>{a.meta}</span>}
                 </div>
               </div>
             );
           }) : (
             <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text-ghost)", fontSize: 13 }}>
-              {d.connected === false ? "Connect to server to see activity" : d.loading ? "Loading…" : "No recent tasks"}
+              {d.connected === false ? "Connect to server to see activity" : !ready.tasks ? "Loading…" : "No recent activity"}
             </div>
           )}
         </div>
 
-        {/* Sessions summary */}
-        {sessions.length > 0 && (
+        {/* Sessions — tap to open that agent's chat */}
+        {recentSessions.length > 0 && (
           <div style={{ marginTop: 16 }}>
             <Section title="Recent Sessions" />
             <div className="card" style={{ padding: "4px 14px" }}>
-              {sessions.slice(0, 4).map((s, i) => {
-                const kindLabel = ({ direct: "Direct chat", cron: "Cron job", group: "Discord group", "spawn-child": "Sub-agent" } as Record<string, string>)[s.kind ?? ""] || s.kind;
-                const tokens = s.totalTokens ? `${Math.round(s.totalTokens / 1000)}K tokens` : "–";
+              {recentSessions.map((s, i) => {
+                const total = s.totalTokens ?? ((s.inputTokens ?? 0) + (s.outputTokens ?? 0));
+                const ctxPct = s.contextTokens && s.inputTokens ? Math.min(Math.round((s.inputTokens / s.contextTokens) * 100), 100) : null;
                 return (
-                  <div key={s.sessionId} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: i < Math.min(sessions.length, 4) - 1 ? "1px solid var(--border)" : "none" }}>
+                  <button key={s.sessionId || s.key} className="tap" onClick={() => s.agentId && nav.push("agentChat", { id: s.agentId })}
+                    style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", width: "100%", minWidth: 0, textAlign: "left",
+                      borderBottom: i < recentSessions.length - 1 ? "1px solid var(--border)" : "none" }}>
                     <div style={{ width: 30, height: 30, borderRadius: 9, background: "var(--surface-2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <Icon name="message" size={14} stroke={2} style={{ color: "var(--accent)" }} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{kindLabel}</div>
-                      <div className="mono clip" style={{ fontSize: 11, color: "var(--text-ghost)", marginTop: 1 }}>{s.sessionId?.slice(0, 20)}…</div>
+                      <div className="clip" style={{ fontSize: 13, fontWeight: 600 }}>{sessionTitle(s)}</div>
+                      <div className="clip" style={{ fontSize: 11, color: "var(--text-ghost)", marginTop: 1 }}>
+                        {s.agentId || "agent"}{s.model ? ` · ${s.model}` : ""}
+                      </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{tokens}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }} title={ctxPct != null ? `${ctxPct}% of context window` : undefined}>
+                        {total ? `${fmtTokens(total)} tokens` : "–"}
+                      </div>
                       <div style={{ fontSize: 11, color: "var(--text-ghost)", marginTop: 1 }}>{relTime(s.updatedAt)}</div>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>

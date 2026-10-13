@@ -53,7 +53,8 @@ function adaptTask(t: RawTask): Task {
     : t.status === "running" ? "Running" : "Queued";
   return {
     id: t.taskId,
-    title: t.label || t.task || t.taskId,
+    // CLI tasks carry a "[Tue 2026-10-13 14:44 GMT+2] " stamp; the time is shown separately
+    title: t.label || t.task?.replace(/^\[[^\]]*\d{4}-\d{2}-\d{2}[^\]]*\]\s*/, "") || t.taskId,
     agent: t.agentId || "Agent",
     color: t.status === "failed" ? "amber" : "blue",
     priority: TASK_PRIO[t.status] || "Normal",
@@ -61,6 +62,7 @@ function adaptTask(t: RawTask): Task {
     col: TASK_COL[t.status] || "Pending",
     ...(t.status === "running" || t.status === "succeeded" ? { prog: t.status === "succeeded" ? 100 : 50 } : {}),
     ...(t.error ? { block: t.error } : {}),
+    ts: t.lastEventAt || t.endedAt || t.createdAt,
   };
 }
 
@@ -87,6 +89,8 @@ export interface DashboardData {
   agents: Agent[]; tasks: Task[]; models: Model[]; sessions: Session[]; crons: CronJob[];
   status: OpenClawStatus | null; sys: SystemStats | null;
   connected: boolean | null; loading: boolean; refresh: () => void;
+  /** Per-source: false until that endpoint has answered once (so counts aren't shown as 0) */
+  ready: Record<(typeof CORE)[number], boolean>;
 }
 
 export function useData(): DashboardData {
@@ -114,6 +118,7 @@ export function useData(): DashboardData {
     sys: (sysQ.data as SystemStats | undefined) ?? null,
     connected: settled ? anyOk : null,
     loading: !settled,
+    ready: Object.fromEntries(CORE.map((name, i) => [name, results[i].data !== undefined])) as DashboardData["ready"],
     refresh: () => CORE.forEach((name) => qc.invalidateQueries({ queryKey: [name] })),
   };
 }

@@ -1,4 +1,4 @@
-import { execFile, execSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import os from "node:os";
 
 const run = (cmd: string, args: string[]) =>
@@ -6,16 +6,46 @@ const run = (cmd: string, args: string[]) =>
     execFile(cmd, args, { timeout: 5000, maxBuffer: 1024 * 256 }, (err, out) => (err ? rej(err) : res(out.trim())));
   });
 
+// Busiest GPU's "Device Utilization %" from the IOAccelerator registry (Intel + AMD on this Mac)
+export async function gpuPct() {
+  const out = await run("ioreg", ["-r", "-d", "1", "-c", "IOAccelerator"]).catch(() => "");
+  const vals = [...out.matchAll(/"Device Utilization %"=(\d+)/g)].map((m) => parseInt(m[1]));
+  return vals.length ? Math.max(...vals) : null;
+}
+
+// RAM in use, the same way Activity Monitor counts it: everything but free + speculative pages
+export function ramUsedFrom(vmStat: string) {
+  const pageSize = parseInt((vmStat.match(/page size of (\d+) bytes/) || [])[1] ?? "") || 4096;
+  const vmNum = (key: string) => {
+    const m = vmStat.match(new RegExp(key + ":\\s+(\\d+)"));
+    return m ? parseInt(m[1]) * pageSize : 0;
+  };
+  return os.totalmem() - (vmNum("Pages free") + vmNum("Pages speculative"));
+}
+
+export const vmStat = () => run("vm_stat", []);
+
+// Static hardware facts; system_profiler alone takes ~1s, so only ask once
+let hardware: Promise<{ cpuModel: string; gpus: string[] }> | null = null;
+const hardwareInfo = () => (hardware ??= (async () => {
+  const cpuModel = await run("sysctl", ["-n", "machdep.cpu.brand_string"]).catch(() => "Unknown CPU");
+  const gpuInfo = await run("bash", ["-c", "system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Chipset Model|VRAM' | head -4"]).catch(() => "");
+  const gpus = gpuInfo.split("\n").filter((l) => l.includes("Chipset")).map((l) => l.replace(/.*Chipset Model:\s*/, "").trim());
+  return { cpuModel, gpus };
+})());
+
 export async function systemStats() {
-  const [cpuLine, vmStat, dfOut, swVers, battOut, modelStr, loadStr, netOut] = await Promise.all([
+  const [cpuLine, vmOut, dfOut, swVers, battOut, modelStr, loadStr, netOut, gpu, { cpuModel, gpus }] = await Promise.all([
     run("bash", ["-c", "top -l 1 -n 0 | grep 'CPU usage'"]),
-    run("vm_stat", []),
+    vmStat(),
     run("df", ["-k", "/"]),
     run("sw_vers", []),
     run("pmset", ["-g", "batt"]),
     run("sysctl", ["-n", "hw.model"]),
     run("sysctl", ["-n", "vm.loadavg"]),
     run("netstat", ["-ib"]).catch(() => ""),
+    gpuPct(),
+    hardwareInfo(),
   ]);
 
   const cpuM = cpuLine.match(/([\d.]+)% user.*?([\d.]+)% sys.*?([\d.]+)% idle/);
@@ -23,13 +53,8 @@ export async function systemStats() {
   const cpuSys = cpuM ? parseFloat(cpuM[2]) : 0;
   const cpuIdle = cpuM ? parseFloat(cpuM[3]) : 100;
 
-  const pageSize = 4096;
-  const vmNum = (key: string) => {
-    const m = vmStat.match(new RegExp(key + ":\\s+(\\d+)"));
-    return m ? parseInt(m[1]) * pageSize : 0;
-  };
   const totalRam = os.totalmem();
-  const usedRam = totalRam - (vmNum("Pages free") + vmNum("Pages speculative"));
+  const usedRam = ramUsedFrom(vmOut);
 
   const dfParts = (dfOut.split("\n")[1] || "").trim().split(/\s+/);
   const diskTotalKb = parseInt(dfParts[1]) || 0;
@@ -65,13 +90,6 @@ export async function systemStats() {
   const netIn = parseInt(netParts[6]) || 0;
   const netOutBytes = parseInt(netParts[9]) || 0;
 
-  const cpuModel = (() => {
-    try { return execSync("sysctl -n machdep.cpu.brand_string", { timeout: 2000 }).toString().trim(); } catch { return "Unknown CPU"; }
-  })();
-
-  const gpuInfo = await run("bash", ["-c", "system_profiler SPDisplaysDataType 2>/dev/null | grep -E 'Chipset Model|VRAM' | head -4"]).catch(() => "");
-  const gpus = gpuInfo.split("\n").filter((l) => l.includes("Chipset")).map((l) => l.replace(/.*Chipset Model:\s*/, "").trim());
-
   const model = modelStr.trim();
   const friendlyModel = model.startsWith("MacBookPro") ? "MacBook Pro" : model.startsWith("MacBookAir") ? "MacBook Air"
     : model.startsWith("MacPro") ? "Mac Pro" : model.startsWith("MacStudio") ? "Mac Studio"
@@ -91,6 +109,6 @@ export async function systemStats() {
     ip, battStatus, battPct: parseInt(battPct ?? "") || null,
     charging: battLine.includes("charging") || battLine.includes("charged"),
     netInMb: (netIn / 1048576).toFixed(0), netOutMb: (netOutBytes / 1048576).toFixed(0),
-    gpus, timestamp: Date.now(),
+    gpuPct: gpu, gpus, timestamp: Date.now(),
   };
 }
