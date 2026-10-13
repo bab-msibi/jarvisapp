@@ -14,7 +14,6 @@ export interface MockTask {
 }
 export interface MockFile { id: string; name: string; type: string; size: string; agent: string; color: string; time: string; ai: boolean }
 export interface Notif { id: string; icon: IconName; tone: Tone; title: string; text: string; time: string; unread: boolean }
-export interface ChatMsg { id: number; from: "agent" | "user"; type?: "task" | "markdown" | "code" | "typing"; text: string; time?: string; prog?: number; sub?: string }
 
 export const AGENTS: MockAgent[] = [
   { id: "research", name: "Research Agent", color: "blue", icon: "search", status: "running", task: "Compiling market analysis on wearables", model: "Qwen2.5-72B", cpu: 34, mem: 4.2, last: "now", priority: "High" },
@@ -89,14 +88,4 @@ export const NOTIFS: Notif[] = [
   { id: "n4", icon: "flow", tone: "warn", title: "Workflow failed", text: "“Deploy staging” stopped at QA approval step", time: "38m ago", unread: false },
   { id: "n5", icon: "power", tone: "neutral", title: "Model stopped", text: "Gemma-2-27B was unloaded to free memory", time: "1h ago", unread: false },
   { id: "n6", icon: "shield", tone: "purple", title: "New device approved", text: "iPhone 16 Pro added to trusted devices", time: "3h ago", unread: false },
-];
-
-export const CHAT: ChatMsg[] = [
-  { id: 1, from: "agent", text: "I've finished compiling the wearables market analysis. Pulled data from 14 sources across the last 18 months.", time: "10:32" },
-  { id: 2, from: "agent", type: "task", text: "Market Analysis · Wearables Q2", prog: 100, sub: "Completed in 4m 12s · 2.4 MB report" },
-  { id: 3, from: "user", text: "Great. What were the top 3 growth segments?", time: "10:33" },
-  { id: 4, from: "agent", type: "markdown", text: "Top 3 by YoY growth:\n1. **Smart rings** — +148% (sleep & recovery focus)\n2. **Continuous glucose** — +96% (non-diabetic adoption)\n3. **Hearables w/ health** — +71%", time: "10:33" },
-  { id: 5, from: "agent", type: "code", text: "// quick pull of the headline figures\nconst top = segments\n  .sort((a,b) => b.yoy - a.yoy)\n  .slice(0, 3);", time: "10:33" },
-  { id: 6, from: "user", text: "Perfect — generate a one-page exec summary.", time: "10:34" },
-  { id: 7, from: "agent", type: "typing", text: "" },
 ];

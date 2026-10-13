@@ -2,120 +2,13 @@
 
 import { Fragment, useState, type ReactNode } from "react";
 import { Field } from "@/components/screens/auth";
-import { AGENT_GRAD, Avatar, Bar, Btn, Dot, GhostBtn, Icon, MD, Pill, Row, Section, Sheet, TopBar, type AgentColor, type IconName, type Tone } from "@/components/ui/primitives";
-import { AGENTS, CHAT, COL_TONE, FILE_TONE, FILES, MODELS, NOTIFS, TASK_COLS, TASKS, type MockTask, type TaskCol } from "@/lib/mock-data";
+import { AGENT_GRAD, Avatar, Bar, Btn, Dot, GhostBtn, Icon, Pill, Row, Section, Sheet, TopBar, type AgentColor, type IconName, type Tone } from "@/components/ui/primitives";
+import { AGENTS, COL_TONE, FILE_TONE, FILES, MODELS, NOTIFS, TASK_COLS, TASKS, type MockTask, type TaskCol } from "@/lib/mock-data";
 import type { Nav, ScreenProps } from "@/lib/nav";
 import { useData } from "@/lib/queries";
 import type { Model } from "@/lib/types";
 
 const TONE_COLOR: Partial<Record<Tone, string>> = { ok: "var(--ok)", warn: "var(--warn)", err: "var(--err)", purple: "var(--purple)", cyan: "var(--cyan)", info: "var(--accent)", neutral: "var(--text-dim)" };
-
-export function AgentChatLegacy({ nav }: ScreenProps) {
-  const a = AGENTS.find(x => x.id === nav.params.id) || AGENTS[0];
-  const [sheet, setSheet] = useState<"controls" | null>(null);
-  const [memOpen, setMemOpen] = useState(false);
-  const col = `var(--${a.color === "blue" ? "accent" : a.color})`;
-  const controls: { icon: IconName; label: string; tone: Tone }[] = [
-    { icon: a.status === "paused" ? "play" : "pause", label: a.status === "paused" ? "Resume" : "Pause", tone: a.status === "paused" ? "ok" : "warn" },
-    { icon: "stop", label: "Stop", tone: "err" }, { icon: "brain", label: "Change Model", tone: "purple" },
-    { icon: "sliders", label: "Assign Tools", tone: "cyan" }, { icon: "flag", label: "Set Priority", tone: "info" },
-  ];
-  return (
-    <div className="screen" style={{ display: "flex", flexDirection: "column", animation: "slideIn .35s cubic-bezier(.2,.7,.2,1)" }}>
-      <TopBar onBack={nav.pop}
-        right={<div style={{ display: "flex", gap: 7 }}><GhostBtn icon="brain" size={38} onClick={() => setMemOpen(true)} /><GhostBtn icon="dots" size={38} onClick={() => setSheet("controls")} /></div>}
-        title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar name={a.name} color={a.color} icon={a.icon} size={26} />{a.name}</span>}
-        sub={<span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><Dot size={5} color={col} pulse={a.status === "running"} />{a.status} · {a.model}</span>} />
-      <div className="screen" style={{ padding: "8px 16px 16px", flex: 1 }}>
-        {CHAT.map(m => {
-          if (m.type === "typing") return (
-            <div key={m.id} style={{ display: "flex", gap: 9, marginBottom: 14 }}>
-              <Avatar name={a.name} color={a.color} icon={a.icon} size={28} />
-              <div className="card" style={{ padding: "13px 15px", borderRadius: "4px 16px 16px 16px", display: "flex", gap: 5 }}>
-                {[0, 1, 2].map(d => <span key={d} style={{ width: 7, height: 7, borderRadius: 4, background: "var(--text-faint)", animation: `pulse 1.2s infinite`, animationDelay: `${d * 0.18}s` }} />)}
-              </div>
-            </div>
-          );
-          if (m.from === "user") return (
-            <div key={m.id} style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-              <div style={{ maxWidth: "78%", background: "var(--accent)", color: "#fff", padding: "11px 14px", borderRadius: "16px 16px 4px 16px", fontSize: 14, lineHeight: 1.45, }}>{m.text}</div>
-            </div>
-          );
-          return (
-            <div key={m.id} style={{ display: "flex", gap: 9, marginBottom: 14 }}>
-              <Avatar name={a.name} color={a.color} icon={a.icon} size={28} />
-              <div style={{ maxWidth: "82%", minWidth: 0 }}>
-                {m.type === "task" ? (
-                  <div className="card" style={{ padding: 13, borderRadius: "4px 16px 16px 16px" }}>
-                    <div className="between" style={{ marginBottom: 9 }}><span style={{ fontSize: 13, fontWeight: 640 }}>{m.text}</span><Pill tone="ok"><Icon name="check" size={11} stroke={2.4} />Done</Pill></div>
-                    <Bar value={m.prog ?? 0} color="var(--ok)" h={6} />
-                    <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 8 }} className="mono">{m.sub}</div>
-                  </div>
-                ) : m.type === "code" ? (
-                  <div style={{ borderRadius: "4px 16px 16px 16px", overflow: "hidden", border: "1px solid var(--border)" }}>
-                    <div className="between" style={{ padding: "8px 12px", background: "var(--surface-2)" }}><span className="mono" style={{ fontSize: 11, color: "var(--text-faint)" }}>javascript</span><Icon name="code" size={13} style={{ color: "var(--text-faint)" }} /></div>
-                    <pre className="mono" style={{ margin: 0, padding: 13, fontSize: 11.5, lineHeight: 1.6, color: "var(--cyan)", background: "var(--surface)", overflowX: "auto", whiteSpace: "pre" }}>{m.text}</pre>
-                  </div>
-                ) : (
-                  <div className="card" style={{ padding: "11px 14px", borderRadius: "4px 16px 16px 16px", fontSize: 14, color: "var(--text)" }}>
-                    {m.type === "markdown" ? <MD text={m.text} /> : m.text}
-                  </div>
-                )}
-                {m.time && <span style={{ fontSize: 10.5, color: "var(--text-ghost)", marginLeft: 4, marginTop: 4, display: "inline-block" }}>{m.time}</span>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ padding: "8px 14px 12px", flexShrink: 0 }}>
-        <div className="glass" style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 6px 6px 16px", borderRadius: 24 }}>
-          <input placeholder={`Message ${a.name}…`} style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: 14.5, fontFamily: "inherit" }} />
-          <button className="tap" style={{ width: 36, height: 36, borderRadius: 36, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)" }}><Icon name="mic" size={19} /></button>
-          <button className="tap" style={{ width: 38, height: 38, borderRadius: 38, background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", }}><Icon name="send" size={18} /></button>
-        </div>
-      </div>
-      <Sheet open={sheet === "controls"} onClose={() => setSheet(null)} title="Agent controls">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          {controls.map(c => {
-            const cc = TONE_COLOR[c.tone];
-            return (
-              <button key={c.label} className="tap card" onClick={() => setSheet(null)} style={{ padding: "15px", display: "flex", alignItems: "center", gap: 11 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 11, background: `color-mix(in oklab, ${cc} 16%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", color: cc }}><Icon name={c.icon} size={18} stroke={2} /></div>
-                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{c.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </Sheet>
-      <Sheet open={memOpen} onClose={() => setMemOpen(false)} title="Agent memory">
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 680, color: "var(--text-faint)", letterSpacing: 0.4, marginBottom: 8 }}>CURRENT OBJECTIVES</div>
-            {["Compile wearables market analysis", "Identify top 3 growth segments", "Produce one-page exec summary"].map((o, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 0" }}>
-                <Icon name={i < 2 ? "check" : "target"} size={15} style={{ color: i < 2 ? "var(--ok)" : "var(--accent)" }} stroke={2.2} />
-                <span style={{ fontSize: 13.5, color: i < 2 ? "var(--text-faint)" : "var(--text)", textDecoration: i < 2 ? "line-through" : "none" }}>{o}</span>
-              </div>
-            ))}
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 680, color: "var(--text-faint)", letterSpacing: 0.4, marginBottom: 8 }}>CONTEXT MEMORY</div>
-            <div className="card" style={{ padding: 12 }}>
-              <div className="between" style={{ marginBottom: 8 }}><span style={{ fontSize: 12.5, color: "var(--text-dim)" }}>Context window</span><span className="mono" style={{ fontSize: 12 }}>82K / 128K</span></div>
-              <Bar value={64} color="var(--purple)" h={6} />
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 680, color: "var(--text-faint)", letterSpacing: 0.4, marginBottom: 8 }}>KNOWLEDGE SOURCES</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
-              {["14 web sources", "RAG: market-db", "internal/q1-data.csv", "Bloomberg API"].map(s => <Pill key={s} tone="cyan"><Icon name="database" size={11} stroke={2} />{s}</Pill>)}
-            </div>
-          </div>
-        </div>
-      </Sheet>
-    </div>
-  );
-}
 
 export function MultiAgent({ nav }: ScreenProps) {
   const roles: { name: string; color: string; icon: IconName; role: string; status: "running" | "done" | "waiting" }[] = [
@@ -311,7 +204,7 @@ export function TaskDetail({ nav }: ScreenProps) {
           <div key={i} style={{ display: "flex", gap: 10, padding: "8px 0" }}><div style={{ width: 8, height: 8, borderRadius: 4, background: "var(--accent)", marginTop: 5 }} /><div><div style={{ fontSize: 13, color: "var(--text-dim)" }}>{l}</div><span className="mono" style={{ fontSize: 11, color: "var(--text-ghost)" }}>10:3{i} AM</span></div></div>
         ))}
       </div>
-      <div style={{ display: "flex", gap: 10, marginTop: 18 }}><Btn full variant="glass" icon="message" onClick={() => nav.push("agentChat", { id: "coding" })}>Open chat</Btn><Btn full icon="check" onClick={nav.pop}>Mark done</Btn></div>
+      <div style={{ display: "flex", gap: 10, marginTop: 18 }}><Btn full variant="glass" icon="message" onClick={() => nav.go("agents")}>Open agents</Btn><Btn full icon="check" onClick={nav.pop}>Mark done</Btn></div>
     </GenericDetail>
   );
 }
@@ -369,24 +262,6 @@ export function CreateTask({ nav }: ScreenProps) {
         </div>
       </div>
       <div style={{ padding: "24px 0 0" }}><Btn full size="lg" icon="plus" onClick={nav.pop}>Create Task</Btn></div>
-    </GenericDetail>
-  );
-}
-
-export function Profile({ nav }: ScreenProps) {
-  return (
-    <GenericDetail nav={nav} title="Profile">
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "10px 0 20px" }}>
-        <Avatar name="Alex Pierce" color="slate" size={84} />
-        <div style={{ fontSize: 20, fontWeight: 740, marginTop: 14, letterSpacing: -0.4 }}>Alex Pierce</div>
-        <div style={{ fontSize: 13.5, color: "var(--text-faint)", marginTop: 3 }}>admin@agentcmd.io</div>
-        <Pill tone="info" style={{ marginTop: 10 }}><Icon name="shield" size={11} stroke={2.4} />Administrator</Pill>
-      </div>
-      <div className="card" style={{ padding: "2px 14px" }}>
-        {[["Role", "Administrator"], ["Member since", "Jan 2025"], ["Last login", "Today, 10:24 AM"], ["Trusted devices", "2"]].map(([k, v], i) => (
-          <div key={k} className="between" style={{ padding: "13px 0", borderBottom: i < 3 ? "1px solid var(--border)" : "none" }}><span style={{ fontSize: 13.5, color: "var(--text-dim)" }}>{k}</span><span style={{ fontSize: 13.5, fontWeight: 580 }}>{v}</span></div>
-        ))}
-      </div>
     </GenericDetail>
   );
 }

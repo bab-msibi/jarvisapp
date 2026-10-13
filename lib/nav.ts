@@ -3,14 +3,14 @@
 export type TabId = "dashboard" | "agents" | "tasks" | "trading" | "files" | "mac" | "settings";
 
 export type OverlayScreen =
-  | "agentChat" | "multiAgent" | "terminal" | "models" | "openclaw" | "mcp" | "devices" | "workflow"
+  | "agentDetail" | "agentChat" | "multiAgent" | "terminal" | "models" | "openclaw" | "mcp" | "devices" | "workflow"
   | "notifications" | "security" | "analytics" | "createAgent" | "createTask" | "taskDetail"
-  | "fileDetail" | "upload" | "profile";
+  | "fileDetail" | "upload" | "profile" | "defaultModel";
 
 // login/onboarding switch the app mode rather than pushing an overlay
 export type PushTarget = OverlayScreen | "login" | "onboarding";
 
-export interface NavParams { id?: string; col?: string }
+export interface NavParams { id?: string }
 
 export interface Nav {
   params: NavParams;

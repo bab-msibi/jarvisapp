@@ -9,7 +9,12 @@
     "prestart": "next build",
     "start": "next start -H 127.0.0.1",
     "typecheck": "tsc --noEmit",
-    "mcp": "node mcp-server.js"
+    "mcp": "node mcp-server.js",
+    "service:install": "scripts/jarvis-service.sh install",
+    "service:uninstall": "scripts/jarvis-service.sh uninstall",
+    "service:restart": "scripts/jarvis-service.sh restart",
+    "service:status": "scripts/jarvis-service.sh status",
+    "service:logs": "scripts/jarvis-service.sh logs"
   },
   "engines": {
     "node": ">=20.9"

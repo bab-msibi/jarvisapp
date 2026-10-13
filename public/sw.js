@@ -1,4 +1,4 @@
-const CACHE = "agent-cmd-v3";
+const CACHE = "agent-cmd-v5";
 const ASSETS = ["/", "/index.html", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
@@ -32,7 +32,23 @@ self.addEventListener("fetch", (e) => {
         return res;
       })
       .catch(() =>
-        caches.match(e.request).then((m) => m || new Response("Offline", { status: 503, statusText: "Offline" }))
+        caches.match(e.request)
+          // Every app URL serves the same page, so any screen can open offline from "/"
+          .then((m) => m || (e.request.mode === "navigate" ? caches.match("/") : undefined))
+          .then((m) => m || new Response("Offline", { status: 503, statusText: "Offline" }))
       )
+  );
+});
+
+// Tapping a chat-reply notification focuses Jarvis on that conversation
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || "/", self.location.origin).href;
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      const win = wins.find((w) => new URL(w.url).origin === self.location.origin);
+      if (win) return win.navigate(url).then((w) => (w || win).focus());
+      return self.clients.openWindow(url);
+    })
   );
 });

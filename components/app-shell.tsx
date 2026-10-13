@@ -1,12 +1,18 @@
 "use client";
 
-import { Component, useEffect, useRef, useState, type ComponentType, type ErrorInfo, type ReactNode } from "react";
-import { Agents } from "@/components/screens/agents";
+import { Component, useCallback, useEffect, useRef, useState, type ComponentType, type ErrorInfo, type ReactNode } from "react";
+import { ChatReplyWatcher, ReplyToasts, type ReplyToast } from "@/components/chat-replies";
+import { AgentChatScreen, AgentDetailScreen, Agents } from "@/components/screens/agents";
 import { LoginScreen, OnboardingScreen } from "@/components/screens/auth";
 import { Dashboard } from "@/components/screens/dashboard";
-import { AgentChatLegacy, CreateAgent, CreateTask, FileDetail, Models, MultiAgent, Notifications, Profile, TaskDetail, Upload } from "@/components/screens/details";
+import { Analytics } from "@/components/screens/analytics";
+import { DefaultModel } from "@/components/screens/default-model";
+import { CreateAgent, CreateTask, FileDetail, Models, MultiAgent, Notifications, TaskDetail, Upload } from "@/components/screens/details";
 import { Devices } from "@/components/screens/devices";
-import { Analytics, OpenClaw, Security, WorkflowBuilder } from "@/components/screens/extras";
+import { OpenClaw } from "@/components/screens/openclaw";
+import { Profile } from "@/components/screens/profile";
+import { Security } from "@/components/screens/security";
+import { WorkflowBuilder } from "@/components/screens/workflow";
 import { Files } from "@/components/screens/files";
 import { Mac } from "@/components/screens/mac";
 import { ClaudeMcp } from "@/components/screens/mcp";
@@ -15,7 +21,8 @@ import { Tasks } from "@/components/screens/tasks";
 import { Terminal } from "@/components/screens/terminal";
 import { Trading } from "@/components/screens/trading";
 import { Icon, useMedia, type IconName } from "@/components/ui/primitives";
-import type { Nav, NavParams, OverlayScreen, ScreenProps, TabId } from "@/lib/nav";
+import type { Nav, OverlayScreen, ScreenProps, TabId } from "@/lib/nav";
+import { parsePath, toPath, type Route } from "@/lib/routes";
 
 type Mode = "login" | "onboarding" | "app";
 
@@ -35,10 +42,10 @@ function hexToRgb(h: string) {
 }
 
 const OVERLAYS: Record<OverlayScreen, ComponentType<ScreenProps>> = {
-    agentChat: AgentChatLegacy, multiAgent: MultiAgent, terminal: Terminal, models: Models,
+    agentDetail: AgentDetailScreen, agentChat: AgentChatScreen, multiAgent: MultiAgent, terminal: Terminal, models: Models,
     openclaw: OpenClaw, mcp: ClaudeMcp, devices: Devices, workflow: WorkflowBuilder, notifications: Notifications,
     security: Security, analytics: Analytics, createAgent: CreateAgent, createTask: CreateTask,
-    taskDetail: TaskDetail, fileDetail: FileDetail, upload: Upload, profile: Profile,
+    taskDetail: TaskDetail, fileDetail: FileDetail, upload: Upload, profile: Profile, defaultModel: DefaultModel,
 };
 
 const TAB_SCREENS: Record<Exclude<TabId, "settings">, ComponentType<ScreenProps>> = {
@@ -101,17 +108,36 @@ function BottomNav({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
 }
 
 function App() {
-  const saved = (() => { try { return JSON.parse(localStorage.getItem("ac_nav") || "{}") as { mode?: Mode; tab?: TabId }; } catch { return {}; } })();
+  const saved = (() => { try { return JSON.parse(localStorage.getItem("ac_nav") || "{}") as { mode?: Mode }; } catch { return {}; } })();
   const [mode, setMode] = useState<Mode>(saved.mode || "login");
-  const [tab, setTab] = useState<TabId>(saved.tab || "dashboard");
-  const [stack, setStack] = useState<{ screen: OverlayScreen; params: NavParams }[]>([]);
+  // The URL is the source of truth for which tab and screens are open
+  const [route, setRoute] = useState<Route>(() => parsePath(location.pathname));
+  const { tab, stack } = route;
   const [dark, setDark] = useState(() => { try { const s = localStorage.getItem("ac_dark"); return s === null ? true : s === "1"; } catch { return true; } });
   const applyDark = (v: boolean) => { setDark(v); try { localStorage.setItem("ac_dark", v ? "1" : "0"); } catch {} };
   const deviceRef = useRef<HTMLDivElement>(null);
   const accent = "#5b8cff";
   const isDesktop = useMedia("(min-width: 900px)");
 
-  useEffect(() => { localStorage.setItem("ac_nav", JSON.stringify({ mode, tab })); }, [mode, tab]);
+  useEffect(() => { localStorage.setItem("ac_nav", JSON.stringify({ mode })); }, [mode]);
+
+  // Every in-app navigation is a browser history entry, so the phone's back
+  // button/gesture closes one screen at a time and links reopen the same screen.
+  // history.state.depth counts entries we pushed, to tell whether "back" stays in the app.
+  useEffect(() => {
+    const canonical = toPath(parsePath(location.pathname));
+    history.replaceState({ depth: history.state?.depth ?? 0 }, "", canonical);
+    const onPop = () => setRoute(parsePath(location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const navigate = (next: Route, how: "push" | "replace") => {
+    setRoute(next);
+    const depth = (history.state?.depth ?? 0) as number;
+    if (how === "push") history.pushState({ depth: depth + 1 }, "", toPath(next));
+    else history.replaceState({ depth }, "", toPath(next));
+  };
 
   useEffect(() => {
     const d = deviceRef.current; if (!d) return;
@@ -127,25 +153,48 @@ function App() {
   const nav: Nav = {
     params: stack.length ? stack[stack.length - 1].params || {} : {},
     push: (screen, params = {}) => {
-      if (screen === "onboarding") { setMode("onboarding"); setStack([]); return; }
-      if (screen === "login") { setMode("login"); setStack([]); return; }
-      setStack(s => [...s, { screen, params }]);
+      if (screen === "onboarding" || screen === "login") { setMode(screen); return; }
+      navigate({ tab, stack: [...stack, { screen, params }] }, "push");
     },
-    pop: () => setStack(s => s.slice(0, -1)),
-    go: (tb) => { setMode("app"); setTab(tb); setStack([]); },
+    pop: () => {
+      if (!stack.length) return;
+      // Step back through history when the previous entry is ours; after a deep
+      // link there is none, so swap in the parent screen instead of leaving the app
+      if ((history.state?.depth ?? 0) > 0) history.back();
+      else navigate({ tab, stack: stack.slice(0, -1) }, "replace");
+    },
+    go: (tb) => {
+      setMode("app");
+      if (tb !== tab || stack.length) navigate({ tab: tb, stack: [] }, "push");
+    },
     replace: (target) => {
-      setStack([]);
-      if (target === "login") setMode("login");
-      else if (target === "onboarding") setMode("onboarding");
-      else { setMode("app"); setTab(target); }
+      if (target === "login" || target === "onboarding") { setMode(target); return; }
+      setMode("app");
+      navigate({ tab: target, stack: [] }, "replace");
     },
   };
+
+  // Agent replies can land on any screen: announce them and link back to the chat
+  const [toasts, setToasts] = useState<ReplyToast[]>([]);
+  const chatRoute = (agentId: string): Route => ({
+    tab: "agents",
+    stack: [{ screen: "agentDetail", params: { id: agentId } }, { screen: "agentChat", params: { id: agentId } }],
+  });
+  const top = stack[stack.length - 1];
+  const activeChatAgentId = top?.screen === "agentChat" ? top.params.id ?? null : null;
+  const dismissToast = useCallback((id: string) => setToasts(ts => ts.filter(t => t.id !== id)), []);
 
   const TabScreen = TAB_SCREENS[tab as Exclude<TabId, "settings">];
   const overlay = stack.length ? stack[stack.length - 1] : null;
 
   return (
     <div className="device" data-theme={theme} ref={deviceRef}>
+      <ChatReplyWatcher activeChatAgentId={activeChatAgentId} chatUrl={id => toPath(chatRoute(id))}
+        onToast={t => setToasts(ts => [...ts.filter(x => x.agentId !== t.agentId), t])} />
+      {mode === "app" && (
+        <ReplyToasts toasts={toasts} onDismiss={dismissToast}
+          onOpen={t => { dismissToast(t.id); setMode("app"); navigate(chatRoute(t.agentId), "push"); }} />
+      )}
       {mode === "login" && <LoginScreen nav={nav} />}
       {mode === "onboarding" && <OnboardingScreen nav={nav} />}
       {mode === "app" && (isDesktop ? (

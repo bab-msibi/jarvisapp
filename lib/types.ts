@@ -7,6 +7,7 @@ import type { listModels } from "@/lib/server/openclaw";
 import type { systemStats } from "@/lib/server/system";
 import type { execCommand } from "@/lib/server/terminal";
 import type { view } from "@/lib/server/devices";
+import type { appInfo, gatewayHealth, modelConfig, tunnelStatus } from "@/lib/server/insights";
 
 export type SystemStats = Awaited<ReturnType<typeof systemStats>>;
 export type FilesResponse = Awaited<ReturnType<typeof recentFiles>>;
@@ -17,6 +18,12 @@ export type McpStatus = ReturnType<typeof mcpStatus>;
 export type ExecResult = Awaited<ReturnType<typeof execCommand>>;
 export type DeviceView = ReturnType<typeof view>;
 export type RawModel = Awaited<ReturnType<typeof listModels>>["models"][number];
+export type GatewayHealth = Awaited<ReturnType<typeof gatewayHealth>>;
+export type ModelConfig = Awaited<ReturnType<typeof modelConfig>>;
+export type TunnelStatus = Awaited<ReturnType<typeof tunnelStatus>>;
+export type Whoami = ReturnType<typeof appInfo> & {
+  remote: boolean; device: DeviceView | null; email: string | null;
+};
 
 // Raw OpenClaw CLI JSON (only the fields the UI reads)
 export interface RawAgent {
@@ -24,7 +31,15 @@ export interface RawAgent {
   bindings?: number; isDefault?: boolean; workspace?: string;
 }
 export interface Session {
-  sessionId?: string; agentId?: string; kind?: string; updatedAt?: number; totalTokens?: number; key?: string;
+  sessionId?: string; agentId?: string; kind?: string; updatedAt?: number; totalTokens?: number | null; key?: string;
+  inputTokens?: number; outputTokens?: number; model?: string; contextTokens?: number;
+}
+export interface OpenClawStatus {
+  runtimeVersion?: string;
+  heartbeat?: { defaultAgentId?: string; agents?: { agentId: string; enabled: boolean; every?: string }[] };
+  tasks?: { total: number; active: number; failures: number; byStatus?: Record<string, number>; byRuntime?: Record<string, number> };
+  taskAudit?: { warnings: number; errors: number };
+  sessions?: { count: number; defaults?: { model?: string; contextTokens?: number } };
 }
 export interface CronJob {
   id?: string; name: string; agentId?: string; enabled?: boolean;

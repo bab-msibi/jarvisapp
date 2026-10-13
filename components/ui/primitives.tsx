@@ -323,12 +323,3 @@ export function TopBar({ title, sub, onBack, right, center }: {
     </div>
   );
 }
-
-// Minimal markdown: **bold** and numbered-list indentation
-export function MD({ text }: { text: string }) {
-  return text.split("\n").map((ln, i) => {
-    const parts = ln.split(/(\*\*[^*]+\*\*)/g).map((p, j) => p.startsWith("**") ? <strong key={j} style={{ fontWeight: 720 }}>{p.slice(2, -2)}</strong> : p);
-    const isNum = /^\d+\.\s/.test(ln);
-    return <div key={i} style={{ marginBottom: 3, paddingLeft: isNum ? 4 : 0, lineHeight: 1.5 }}>{parts}</div>;
-  });
-}

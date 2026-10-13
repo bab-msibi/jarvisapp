@@ -11,6 +11,18 @@ npm run dev        # development server with hot reload
 npm run typecheck  # strict TypeScript check
 ```
 
+### Run in the background
+
+```sh
+npm run service:install    # start at login, restart if it stops, keep the Mac awake on AC power
+npm run service:status     # is it running / answering?
+npm run service:restart    # pick up code changes (rebuilds only if the source changed)
+npm run service:logs       # follow scripts/jarvis-server.log
+npm run service:uninstall
+```
+
+The service is a launchd agent (`scripts/ai.jarvis.server.plist` → `scripts/jarvis-server.sh`). It holds a `caffeinate -s` assertion so the Mac doesn't sleep while plugged in; on battery it sleeps normally. Stop any manual `npm start` first — both use port 3000.
+
 The server always binds to `127.0.0.1` (see the scripts in `package.json`). Keep it that way: the API runs shell commands and reads home-directory files, and remote access is meant to go only through the device-gated Cloudflare tunnel.
 
 | Variable | Default | Purpose |
@@ -20,8 +32,9 @@ The server always binds to `127.0.0.1` (see the scripts in `package.json`). Keep
 
 ## Layout
 
-- `app/` — the root layout, the page, and `app/api/*` route handlers.
-- `components/app-shell.tsx` — navigation shell (tabs + overlay stack), sidebar, bottom nav, error boundary.
+- `app/` — the root layout and `app/api/*` route handlers.
+- `app/[[...slug]]/page.tsx` — serves the app at every path; `lib/routes.ts` maps URLs to screens.
+- `components/app-shell.tsx` — navigation shell (tabs + overlay stack synced to the URL and browser history), sidebar, bottom nav, error boundary.
 - `components/screens/` — one module per screen; `components/ui/` — shared primitives and the connection badge.
 - `lib/queries.ts` — TanStack Query hooks (`useData` polls the core endpoints every 15 s) and the raw → UI adapters.
 - `lib/server/` — server-only code: OpenClaw CLI bridge, response cache, system stats, files, terminal, MCP setup, device whitelist.
@@ -31,6 +44,10 @@ The server always binds to `127.0.0.1` (see the scripts in `package.json`). Keep
 - `pairing.html` — page shown to devices that aren't approved yet (served by `proxy.ts`, not publicly routable).
 - `mcp-server.js` — standalone stdio MCP server exposing the API to Claude (`.mcp.json` registers it).
 - `public/` — service worker, manifest, icons.
+
+## URLs
+
+Every screen has its own address, so the browser/phone back button closes one screen at a time and links reopen the same screen: tabs are `/`, `/agents`, `/tasks`, `/trade`, `/files`, `/mac`, `/settings`, and screens stack on top, e.g. `/settings/devices`, `/settings/openclaw/default-model`, `/agents/agent/main/chat/main`.
 
 ## Remote access
 
