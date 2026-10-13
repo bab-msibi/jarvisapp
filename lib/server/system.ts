@@ -33,8 +33,11 @@ export async function systemStats() {
 
   const dfParts = (dfOut.split("\n")[1] || "").trim().split(/\s+/);
   const diskTotalKb = parseInt(dfParts[1]) || 0;
-  const diskUsedKb = parseInt(dfParts[2]) || 0;
-  const gb = (kb: number) => (kb / 1024 / 1024).toFixed(0);
+  // "/" is the sealed system volume (~12 GB); every APFS volume shares the container's space,
+  // so used = container size − free, which is what Finder reports
+  const diskUsedKb = Math.max(diskTotalKb - (parseInt(dfParts[3]) || 0), 0);
+  // Decimal GB, like Finder
+  const gb = (kb: number) => ((kb * 1024) / 1e9).toFixed(0);
 
   const uptimeSec = Math.floor(os.uptime());
   const days = Math.floor(uptimeSec / 86400);
