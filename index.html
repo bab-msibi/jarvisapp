@@ -1978,6 +1978,7 @@ function Settings({ nav, theme, setTheme }) {
     { header: "Server", rows: [
       { icon: "flow", color: "var(--accent)", title: "OpenClaw Integration", sub: "Connected · 192.168.1.24:8080", to: "openclaw" },
       { icon: "spark", color: "var(--warn)", title: "Claude MCP", sub: "Connect Claude Desktop & Claude Code", to: "mcp" },
+      { icon: "lock", color: "var(--ok)", title: "Devices", sub: "Whitelist for remote access", to: "devices" },
       { icon: "key", color: "var(--warn)", title: "API Keys", sub: "4 keys · 1 expiring soon" },
       { icon: "network", color: "var(--cyan)", title: "Local Network", sub: "Remote access enabled" },
     ]},
@@ -2615,6 +2616,85 @@ function OpenClaw({ nav }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function Devices({ nav }) {
+  const [list, setList] = useState(null);
+  const [err, setErr] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+
+  const load = () => apiFetch("/api/devices").then(d => { setList(d.devices); setErr(null); }).catch(e => setErr(e.message));
+  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
+
+  const act = async (action, id) => {
+    try {
+      const r = await fetch(`/api/devices/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    } catch (e) { setErr(e.message); }
+    setConfirm(null);
+    load();
+  };
+
+  const pending = (list || []).filter(d => d.status === "pending");
+  const approved = (list || []).filter(d => d.status === "approved");
+  const meta = d => [d.email, d.ip, d.status === "approved" ? `seen ${relTime(d.lastSeen)}` : `requested ${relTime(d.createdAt)}`].filter(Boolean).join(" · ");
+
+  return (
+    <div className="screen pad-b" style={{ animation: "slideIn .35s cubic-bezier(.2,.7,.2,1)" }}>
+      <TopBar onBack={nav.pop} title="Devices" sub="Who can reach Jarvis remotely" right={<GhostBtn icon="refresh" size={38} onClick={load} />} />
+      <div className="pad">
+        <div className="card" style={{ padding: 14, marginBottom: 18, fontSize: 12.5, color: "var(--text-faint)", lineHeight: 1.55 }}>
+          Devices opening Jarvis through the Cloudflare tunnel must be approved here first. This Mac always has access.
+          Approve only codes that match what you see on your own device.
+        </div>
+        {err && <div className="card" style={{ padding: 13, marginBottom: 14, color: "var(--err)", fontSize: 13 }}>{err}</div>}
+        {!list && !err && <div style={{ color: "var(--text-faint)", fontSize: 13, padding: 8 }}>Loading…</div>}
+
+        {pending.length > 0 && <>
+          <Section title={`Waiting for approval (${pending.length})`} />
+          <div className="card" style={{ padding: "4px 14px", marginBottom: 18 }}>
+            {pending.map((d, i) => (
+              <div key={d.id} style={{ padding: "12px 0", borderBottom: i === pending.length - 1 ? "none" : "1px solid var(--border)" }}>
+                <div className="between" style={{ gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 600 }} className="clip">{d.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-faint)", marginTop: 1 }} className="clip">{meta(d)}</div>
+                  </div>
+                  <span className="mono" style={{ fontSize: 17, fontWeight: 700, letterSpacing: 3, color: "var(--warn)" }}>{d.code}</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <Btn full size="sm" variant="glass" onClick={() => act("remove", d.id)}>Deny</Btn>
+                  <Btn full size="sm" variant="ok" icon="check" onClick={() => act("approve", d.id)}>Approve</Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>}
+
+        {list && <>
+          <Section title={`Approved (${approved.length})`} />
+          <div className="card" style={{ padding: "2px 14px" }}>
+            {approved.length === 0 && <div style={{ padding: "14px 4px", fontSize: 13, color: "var(--text-faint)" }}>No remote devices yet. Open your Jarvis address on a phone or laptop to request access.</div>}
+            {approved.map((d, i) => (
+              <Row key={d.id} last={i === approved.length - 1} icon="monitor" iconColor="var(--ok)"
+                title={<span>{d.name}{d.current && <Pill tone="info" style={{ marginLeft: 7 }}>This device</Pill>}</span>} sub={meta(d)}
+                right={<Btn size="sm" variant="danger" onClick={() => setConfirm(d)}>Revoke</Btn>} />
+            ))}
+          </div>
+        </>}
+      </div>
+      <Sheet open={!!confirm} onClose={() => setConfirm(null)} title="Revoke access?">
+        <p style={{ fontSize: 14, color: "var(--text-dim)", margin: 0 }}>
+          {confirm?.current ? "This is the device you're using — you'll lose access immediately." : `“${confirm?.name}” will need to request approval again.`}
+        </p>
+        <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+          <Btn full variant="glass" onClick={() => setConfirm(null)}>Cancel</Btn>
+          <Btn full variant="danger" onClick={() => act("remove", confirm.id)}>Revoke</Btn>
+        </div>
+      </Sheet>
     </div>
   );
 }
@@ -3448,7 +3528,7 @@ function hexToRgb(h) {
 function renderOverlay(screen, nav) {
   const map = {
     agentChat: AgentChatLegacy, multiAgent: MultiAgent, terminal: Terminal, models: Models,
-    openclaw: OpenClaw, mcp: ClaudeMcp, workflow: WorkflowBuilder, notifications: Notifications,
+    openclaw: OpenClaw, mcp: ClaudeMcp, devices: Devices, workflow: WorkflowBuilder, notifications: Notifications,
     security: Security, analytics: Analytics, createAgent: CreateAgent, createTask: CreateTask,
     taskDetail: TaskDetail, fileDetail: FileDetail, upload: Upload, profile: Profile,
   };

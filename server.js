@@ -8,6 +8,7 @@ const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
+const devices = require("./devices");
 
 const execFileAsync = promisify(execFile);
 const PORT = parseInt(process.env.PORT, 10) || 3000;
@@ -447,6 +448,30 @@ function runShell(command, cwd) {
   });
 }
 
+// --- Device whitelist handlers (ctx: { req, res, remote, device }) ---
+function handleDevices(pathname, method, body, ctx) {
+  if (pathname === "/api/devices/me" && method === "GET") {
+    if (!ctx.remote) return { status: "local" };
+    return ctx.device ? devices.view(ctx.device, ctx.device) : { status: "none" };
+  }
+  if (pathname === "/api/devices/request" && method === "POST") {
+    if (!ctx.remote) throw new HttpError(400, "This Mac doesn't need approval");
+    const { device, token } = devices.requestAccess(ctx.req, body?.name);
+    if (token) ctx.res.setHeader("Set-Cookie", devices.cookieHeader(token, true));
+    return devices.view(device, device);
+  }
+  // Everything below manages the whitelist — only this Mac or an approved device gets here
+  if (pathname === "/api/devices" && method === "GET") return { devices: devices.list(ctx.device) };
+  if (method === "POST") {
+    const id = body?.id;
+    if (typeof id !== "string") throw new HttpError(400, "id required");
+    if (pathname === "/api/devices/approve") return devices.view(devices.approve(id), ctx.device);
+    if (pathname === "/api/devices/rename") return devices.view(devices.rename(id, body.name), ctx.device);
+    if (pathname === "/api/devices/remove") { devices.remove(id); return { ok: true }; }
+  }
+  throw new HttpError(404, "Unknown route");
+}
+
 // --- POST handlers ---
 async function handlePost(pathname, body) {
   if (pathname === "/api/exec") {
@@ -550,16 +575,36 @@ function serveFile(res, filePath) {
   });
 }
 
-function cors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-}
+// Only the app's own files are served — never server code, .git, or devices.json
+const PUBLIC_FILES = new Set(["/index.html", "/manifest.json", "/sw.js", "/icon.svg", "/icon-192.png", "/icon-512.png", "/icon-maskable.svg"]);
+// Reachable by devices that haven't been approved yet
+const PAIRING_ROUTES = new Set(["/api/devices/me", "/api/devices/request"]);
+const PAIRING_PAGE = path.join(DIR, "pairing.html");
 
+// No CORS headers: the app is same-origin, so other websites can't read the API
 async function handleRequest(req, res) {
-  cors(res);
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
   const pathname = url.pathname;
+
+  // Tunneled requests must come from an approved device
+  const remote = devices.isRemote(req);
+  const device = remote ? devices.deviceFor(req) : null;
+  if (device) devices.touch(device, req);
+  const approved = !remote || device?.status === "approved";
+  if (!approved && !PAIRING_ROUTES.has(pathname)) {
+    if (pathname.startsWith("/api/")) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Device not approved" }));
+    } else {
+      // 401 keeps the service worker from caching the pairing page as the app
+      fs.readFile(PAIRING_PAGE, (err, data) => {
+        res.writeHead(err ? 500 : 401, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+        res.end(err ? "Pairing page missing" : data);
+      });
+    }
+    return;
+  }
+  const ctx = { req, res, remote, device };
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -572,6 +617,12 @@ async function handleRequest(req, res) {
     res.setHeader("Content-Type", "application/json");
 
     if (req.method === "POST") {
+      // A JSON content type can't be sent cross-site without a CORS preflight, which we never grant
+      if (!String(req.headers["content-type"] || "").startsWith("application/json")) {
+        res.writeHead(415);
+        res.end(JSON.stringify({ error: "Content-Type must be application/json" }));
+        return;
+      }
       let body = "";
       let tooLarge = false;
       req.on("data", c => {
@@ -593,7 +644,9 @@ async function handleRequest(req, res) {
           } catch {
             throw new HttpError(400, "Invalid JSON body");
           }
-          const result = await handlePost(pathname, parsed);
+          const result = pathname.startsWith("/api/devices")
+            ? handleDevices(pathname, "POST", parsed, ctx)
+            : await handlePost(pathname, parsed);
           res.writeHead(200);
           res.end(JSON.stringify(result));
         } catch (e) {
@@ -601,6 +654,18 @@ async function handleRequest(req, res) {
           res.end(JSON.stringify({ error: e.message }));
         }
       });
+      return;
+    }
+
+    if (pathname.startsWith("/api/devices")) {
+      try {
+        const data = handleDevices(pathname, "GET", null, ctx);
+        res.writeHead(200);
+        res.end(JSON.stringify(data));
+      } catch (e) {
+        res.writeHead(e.status || 500);
+        res.end(JSON.stringify({ error: e.message }));
+      }
       return;
     }
 
@@ -636,12 +701,13 @@ async function handleRequest(req, res) {
     res.end("Bad request");
     return;
   }
-  const filePath = path.resolve(DIR, "." + (decoded === "/" ? "/index.html" : decoded));
-  if (filePath !== DIR && !filePath.startsWith(DIR + path.sep)) {
-    res.writeHead(403, { "Content-Type": "text/plain" });
-    res.end("Forbidden");
+  const publicPath = decoded === "/" ? "/index.html" : decoded;
+  if (!PUBLIC_FILES.has(publicPath)) {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Not found");
     return;
   }
+  const filePath = path.join(DIR, publicPath);
   serveFile(res, filePath);
 }
 
@@ -667,7 +733,7 @@ server.on("error", (e) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`\nJarvis PWA running at http://${HOST}:${PORT}`);
-  console.log("API endpoints: /api/health /api/status /api/agents /api/tasks /api/sessions /api/models /api/cron /api/system /api/files /api/exec /api/mcp\n");
+  console.log("API endpoints: /api/health /api/status /api/agents /api/tasks /api/sessions /api/models /api/cron /api/system /api/files /api/exec /api/mcp /api/devices\n");
   // Pre-warm cache in background so first browser load is fast
   const warm = ["/api/agents", "/api/status", "/api/sessions", "/api/cron", "/api/tasks", "/api/models", "/api/system"];
   warm.forEach(k => {
