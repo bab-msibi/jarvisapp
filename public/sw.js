@@ -1,4 +1,4 @@
-const CACHE = "agent-cmd-v4";
+const CACHE = "agent-cmd-v5";
 const ASSETS = ["/", "/index.html", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
@@ -37,5 +37,18 @@ self.addEventListener("fetch", (e) => {
           .then((m) => m || (e.request.mode === "navigate" ? caches.match("/") : undefined))
           .then((m) => m || new Response("Offline", { status: 503, statusText: "Offline" }))
       )
+  );
+});
+
+// Tapping a chat-reply notification focuses Jarvis on that conversation
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || "/", self.location.origin).href;
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      const win = wins.find((w) => new URL(w.url).origin === self.location.origin);
+      if (win) return win.navigate(url).then((w) => (w || win).focus());
+      return self.clients.openWindow(url);
+    })
   );
 });

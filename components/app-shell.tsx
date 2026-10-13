@@ -1,6 +1,7 @@
 "use client";
 
-import { Component, useEffect, useRef, useState, type ComponentType, type ErrorInfo, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useRef, useState, type ComponentType, type ErrorInfo, type ReactNode } from "react";
+import { ChatReplyWatcher, ReplyToasts, type ReplyToast } from "@/components/chat-replies";
 import { AgentChatScreen, AgentDetailScreen, Agents } from "@/components/screens/agents";
 import { LoginScreen, OnboardingScreen } from "@/components/screens/auth";
 import { Dashboard } from "@/components/screens/dashboard";
@@ -173,11 +174,27 @@ function App() {
     },
   };
 
+  // Agent replies can land on any screen: announce them and link back to the chat
+  const [toasts, setToasts] = useState<ReplyToast[]>([]);
+  const chatRoute = (agentId: string): Route => ({
+    tab: "agents",
+    stack: [{ screen: "agentDetail", params: { id: agentId } }, { screen: "agentChat", params: { id: agentId } }],
+  });
+  const top = stack[stack.length - 1];
+  const activeChatAgentId = top?.screen === "agentChat" ? top.params.id ?? null : null;
+  const dismissToast = useCallback((id: string) => setToasts(ts => ts.filter(t => t.id !== id)), []);
+
   const TabScreen = TAB_SCREENS[tab as Exclude<TabId, "settings">];
   const overlay = stack.length ? stack[stack.length - 1] : null;
 
   return (
     <div className="device" data-theme={theme} ref={deviceRef}>
+      <ChatReplyWatcher activeChatAgentId={activeChatAgentId} chatUrl={id => toPath(chatRoute(id))}
+        onToast={t => setToasts(ts => [...ts.filter(x => x.agentId !== t.agentId), t])} />
+      {mode === "app" && (
+        <ReplyToasts toasts={toasts} onDismiss={dismissToast}
+          onOpen={t => { dismissToast(t.id); setMode("app"); navigate(chatRoute(t.agentId), "push"); }} />
+      )}
       {mode === "login" && <LoginScreen nav={nav} />}
       {mode === "onboarding" && <OnboardingScreen nav={nav} />}
       {mode === "app" && (isDesktop ? (

@@ -42,13 +42,16 @@ export async function gatewayHealth() {
   };
 }
 
-interface RawModelStatus { defaultModel?: string; resolvedDefault?: string; fallbacks?: string[] }
+interface RawModelStatus { defaultModel?: string; resolvedDefault?: string; fallbacks?: string[]; allowed?: string[] }
 
 export async function modelConfig() {
   const s = await oc<RawModelStatus>(["models", "status", "--json"]);
+  const defaultModel = s.resolvedDefault || s.defaultModel || null;
   return {
-    defaultModel: s.resolvedDefault || s.defaultModel || null,
+    defaultModel,
     fallbacks: s.fallbacks ?? [],
+    // Models a chat may switch to for a single turn: the default plus the agent allowlist
+    chatModels: [...new Set([defaultModel, ...(s.allowed ?? [])].filter((m): m is string => !!m))],
   };
 }
 

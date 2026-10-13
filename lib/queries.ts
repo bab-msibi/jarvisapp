@@ -160,12 +160,14 @@ export function useInstallDesktopMcp() {
 
 export const useExec = () => useMutation({ mutationFn: (command: string) => apiPost<ExecResult>("/api/exec", { command }) });
 
-export interface ChatReply { reply?: string; payloads?: { text?: string }[]; result?: { payloads?: { text?: string }[] }; [k: string]: unknown }
+export interface ChatJob {
+  id: string; agentId: string; sessionKey: string | null; model: string | null;
+  status: "running" | "done" | "error"; reply: string | null; error: string | null;
+  usedModel: string | null; startedAt: number; finishedAt: number | null;
+}
 
-export const useAgentChat = () =>
-  useMutation({
-    mutationFn: (v: { agentId: string; message: string; sessionKey?: string }) => apiPost<ChatReply>("/api/agent/chat", v),
-  });
+export const startChat = (v: { agentId: string; message: string; sessionKey: string; model?: string | null }) =>
+  apiPost<{ job: ChatJob }>("/api/agent/chat", { ...v, model: v.model || undefined, async: true });
 
 export const useWhoami = () => useQuery({ queryKey: ["whoami"], queryFn: () => apiGet<Whoami>("/api/whoami"), staleTime: 60000 });
 

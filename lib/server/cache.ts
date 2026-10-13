@@ -25,3 +25,9 @@ export function cached<T>(key: string, ttl: number, fn: () => Promise<T>): Promi
 export function invalidate(...keys: string[]) {
   keys.forEach((k) => CACHE.delete(k));
 }
+
+// The cached value if one is stored, without loading it
+export function peek<T>(key: string): T | undefined {
+  const hit = CACHE.get(key);
+  return hit && !hit.pending ? (hit.data as T) : undefined;
+}

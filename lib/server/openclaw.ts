@@ -76,29 +76,42 @@ export async function listModels() {
   return { models };
 }
 
-export async function agentChat(agentId: string, message: string, sessionKey?: string) {
+// Text of an `openclaw agent --json` result: { result: { payloads: [{ text }] } }
+export function replyText(raw: unknown): string {
+  const r = raw as { result?: { payloads?: { text?: string }[] }; reply?: string };
+  const texts = (r?.result?.payloads ?? []).map((p) => p.text).filter((t): t is string => !!t);
+  if (texts.length) return texts.join("\n\n");
+  if (typeof r?.reply === "string") return r.reply;
+  return "(The agent finished without a text reply)";
+}
+
+// One agent turn. `model` overrides the agent's model for this turn only — OpenClaw
+// accepts overrides only for models in the agent's allowlist (agents.defaults.models).
+export async function agentChat(agentId: string, message: string, sessionKey?: string, model?: string) {
   const args = ["agent", "--agent", agentId, "--message", message, "--json"];
   if (sessionKey) args.push("--session-key", sessionKey);
-  // Model override is controlled by agent config — do not pass --model
+  if (model) args.push("--model", model);
   try {
     const { stdout, stderr } = await execFileAsync(OPENCLAW, args, { timeout: 620000, maxBuffer: 1024 * 1024 * 4 });
     // Filter out log lines (start with "[")
     const jsonText = stdout.trim().split("\n").filter((l) => !l.startsWith("[") && l.trim()).join("\n").trim();
-    if (!jsonText) {
-      const errLines = (stderr || "").split("\n").filter((l) => !l.startsWith("[") && l.trim());
-      throw new Error(errLines.join(" ").trim() || "Agent returned no response");
-    }
+    if (!jsonText) throw Object.assign(new Error("Agent returned no response"), { stderr });
     try {
       return JSON.parse(jsonText);
     } catch {
       return { reply: jsonText, sessionKey };
     }
   } catch (e) {
-    const err = e as ExecError;
+    const err = e as ExecError & { stderr?: string };
     if (err.code === "ENOENT") throw new Error(`'${OPENCLAW}' CLI not found in PATH`);
     if (err.killed || err.code === "ETIMEDOUT") throw new Error("Agent timed out. The model may be loading — try again.");
-    const msg = (err.message || "").replace(/GatewayClientRequestError: /g, "").replace(/FailoverError: /g, "");
-    throw new HttpError(500, msg || "Agent error");
+    // Report OpenClaw's own error line, not the failed command (which would echo the message)
+    const detail = (err.stderr || "").split("\n").filter((l) => l.trim() && !l.startsWith("[")).pop() || err.message;
+    const msg = detail.replace(/^(?:\w*Error:\s*)+/, "");
+    const harness = msg.match(/agent harness "([^"]+)" is not registered/);
+    throw new HttpError(500, harness
+      ? `This model needs OpenClaw's "${harness[1]}" agent runtime, which isn't installed. Pick another model for this chat.`
+      : msg.slice(0, 500) || "Agent error");
   }
 }
 
