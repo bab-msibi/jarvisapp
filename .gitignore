@@ -6,3 +6,8 @@ node_modules/
 digests/
 devices.json
 devices.json.tmp
+
+# Next.js
+.next/
+next-env.d.ts
+*.tsbuildinfo

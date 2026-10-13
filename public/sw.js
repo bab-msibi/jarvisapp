@@ -1,4 +1,4 @@
-const CACHE = "agent-cmd-v2";
+const CACHE = "agent-cmd-v3";
 const ASSETS = ["/", "/index.html", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
