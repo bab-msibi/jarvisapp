@@ -1,15 +1,29 @@
 {
   "name": "jarvisapp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Jarvis PWA — local dashboard and API bridge for OpenClaw",
-  "main": "server.js",
+  "description": "Jarvis \u2014 local dashboard and API bridge for OpenClaw (Next.js)",
   "scripts": {
-    "start": "node server.js",
-    "mcp": "node mcp-server.js",
-    "check": "node --check server.js && node --check mcp-server.js"
+    "dev": "next dev -H 127.0.0.1",
+    "build": "next build",
+    "prestart": "next build",
+    "start": "next start -H 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "mcp": "node mcp-server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.9"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.104.2",
+    "next": "^16.4.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^7.0.2"
   }
 }
