@@ -175,24 +175,29 @@ async function handle(msg) {
   }
 }
 
-const rl = readline.createInterface({ input: process.stdin, terminal: false });
-const pending = new Set();
+module.exports = { tools };
 
-rl.on("line", (line) => {
-  if (!line.trim()) return;
-  let msg;
-  try {
-    msg = JSON.parse(line);
-  } catch {
-    send({ id: null, error: { code: -32700, message: "Parse error" } });
-    return;
-  }
-  const p = handle(msg).catch(e => {
-    if (msg.id !== undefined) send({ id: msg.id, error: { code: -32603, message: e.message } });
-  }).finally(() => pending.delete(p));
-  pending.add(p);
-});
+// Only speak MCP over stdio when run directly (server.js imports the tool list)
+if (require.main === module) {
+  const rl = readline.createInterface({ input: process.stdin, terminal: false });
+  const pending = new Set();
 
-// Let in-flight tool calls finish before exiting
-rl.on("close", () => Promise.allSettled([...pending]).then(() => process.exit(0)));
-process.stderr.write(`jarvis MCP server ready (JARVIS_URL=${JARVIS_URL})\n`);
+  rl.on("line", (line) => {
+    if (!line.trim()) return;
+    let msg;
+    try {
+      msg = JSON.parse(line);
+    } catch {
+      send({ id: null, error: { code: -32700, message: "Parse error" } });
+      return;
+    }
+    const p = handle(msg).catch(e => {
+      if (msg.id !== undefined) send({ id: msg.id, error: { code: -32603, message: e.message } });
+    }).finally(() => pending.delete(p));
+    pending.add(p);
+  });
+
+  // Let in-flight tool calls finish before exiting
+  rl.on("close", () => Promise.allSettled([...pending]).then(() => process.exit(0)));
+  process.stderr.write(`jarvis MCP server ready (JARVIS_URL=${JARVIS_URL})\n`);
+}
