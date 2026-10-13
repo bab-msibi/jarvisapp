@@ -65,9 +65,11 @@ Requests that arrive through Cloudflare Tunnel (identified by Cloudflare's `cf-c
 | `/api/models` | GET | `openclaw models list` (parsed table) |
 | `/api/cron` | GET | `openclaw cron list --json` |
 | `/api/system` | GET | macOS system stats (`top`, `vm_stat`, `df`, `pmset`, …) |
-| `/api/files` | GET | Recent files in `~/Desktop`, `~/Downloads`, `~/Documents`, `~/Pictures` and the agent workspace. Params: `q`, `folder`, `type` (image/doc/code/media/archive), `sort` (recent/size/name), `limit`. The disk scan is cached for 30s |
+| `/api/files` | GET | Recent files in `~/Desktop`, `~/Downloads`, `~/Documents`, `~/Pictures` and the agent workspace. Params: `q`, `folder`, `type` (image/doc/code/media/archive), `sort` (recent/size/name), `limit`, `offset`, `content=1` (also match file contents: Spotlight, plus a direct read of the workspace's text files). The disk scan is cached for 30s |
 | `/api/files/raw` | GET | Streams one file by `id` (inline for images/PDF/text, else download; `download=1` forces it). Ids resolving outside the indexed folders are refused |
 | `/api/files/reveal` | POST | `{ id }` — selects the file in Finder. Local requests only |
+| `/api/files/thumb` | GET | JPEG thumbnail for an image, PDF or video `id` (sips / Quick Look, cached in `~/Library/Caches/ai.jarvis/thumbs`) |
+| `/api/files/upload` | PUT | Raw file body; `folder` (Workspace/Downloads/Desktop/Documents) and `name`. Max 100 MB, never overwrites |
 | `/api/market` | GET | Simulated market data (paper trading) |
 | `/api/mcp` | GET | Claude MCP install status and config |
 | `/api/devices` | GET | Device whitelist |

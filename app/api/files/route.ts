@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 export const GET = handle((req) => {
   const p = req.nextUrl.searchParams;
   const get = (k: string) => p.get(k) ?? undefined;
-  return recentFiles({ q: get("q"), folder: get("folder"), type: get("type"), sort: get("sort"), limit: get("limit") });
+  return recentFiles({ q: get("q"), folder: get("folder"), type: get("type"), sort: get("sort"), limit: get("limit"), offset: get("offset"), content: get("content") });
 });
