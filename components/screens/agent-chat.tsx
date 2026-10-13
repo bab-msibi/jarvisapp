@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AgentEmoji } from "@/components/ui/agent-emoji";
 import { Header, Icon, Pill, Sheet } from "@/components/ui/primitives";
 import {
-  addPending, appendMessage, latestSession, newChatSession, saveSession, useChatSessions, usePendingReplies, type ChatSession,
+  addPending, appendMessage, clearUnread, latestSession, newChatSession, saveSession, useChatSessions, usePendingReplies, type ChatSession,
 } from "@/lib/chat-store";
 import { startChat, useData, useModelConfig } from "@/lib/queries";
 import type { Agent, Model } from "@/lib/types";
@@ -109,6 +109,9 @@ export function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => voi
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [active.messages.length, waiting]);
+
+  // Opening the chat (or a reply landing while it's open) marks this agent's replies as read
+  useEffect(() => { clearUnread(agent.id); }, [agent.id, sessions]);
 
   function openSession(s: ChatSession) {
     setActiveId(s.id); setShowHistory(false); setInput("");

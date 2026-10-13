@@ -3,7 +3,7 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { Field } from "@/components/screens/auth";
 import { AGENT_GRAD, Avatar, Bar, Btn, Dot, GhostBtn, Icon, Pill, Row, Section, Sheet, TopBar, type AgentColor, type IconName, type Tone } from "@/components/ui/primitives";
-import { AGENTS, COL_TONE, FILE_TONE, FILES, MODELS, NOTIFS, TASK_COLS, TASKS, type MockTask, type TaskCol } from "@/lib/mock-data";
+import { AGENTS, COL_TONE, FILE_TONE, FILES, MODELS, TASK_COLS, TASKS, type MockTask, type TaskCol } from "@/lib/mock-data";
 import type { Nav, ScreenProps } from "@/lib/nav";
 import { useData } from "@/lib/queries";
 import type { Model } from "@/lib/types";
@@ -124,27 +124,6 @@ export function Models({ nav }: ScreenProps) {
           })}
         </div>
       </Sheet>
-    </div>
-  );
-}
-
-export function Notifications({ nav }: ScreenProps) {
-  const tone = (t: Tone) => TONE_COLOR[t];
-  return (
-    <div className="screen pad-b" style={{ animation: "slideIn .35s cubic-bezier(.2,.7,.2,1)" }}>
-      <TopBar onBack={nav.pop} title="Notifications" sub="3 unread" right={<button className="tap" style={{ fontSize: 12.5, color: "var(--accent)", fontWeight: 600 }}>Clear</button>} />
-      <div className="pad" style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-        {NOTIFS.map(n => (
-          <div key={n.id} className="card" style={{ padding: 14, display: "flex", gap: 12, position: "relative", opacity: n.unread ? 1 : 0.72 }}>
-            <div style={{ width: 38, height: 38, borderRadius: 11, background: `color-mix(in oklab, ${tone(n.tone)} 15%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", color: tone(n.tone), flexShrink: 0 }}><Icon name={n.icon} size={19} stroke={2} /></div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="between"><span style={{ fontSize: 14, fontWeight: 640 }}>{n.title}</span><span style={{ fontSize: 11, color: "var(--text-ghost)", flexShrink: 0 }}>{n.time}</span></div>
-              <div style={{ fontSize: 13, color: "var(--text-dim)", marginTop: 3, lineHeight: 1.4 }}>{n.text}</div>
-            </div>
-            {n.unread && <span style={{ position: "absolute", top: 14, right: 14, width: 8, height: 8, borderRadius: 4, background: "var(--accent)" }} />}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

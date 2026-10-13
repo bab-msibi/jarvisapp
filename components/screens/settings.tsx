@@ -3,6 +3,7 @@
 import { ConnectionBadge, OfflineBanner } from "@/components/ui/connection";
 import { Avatar, Btn, Header, Icon, Pill, Row, Section, type IconName } from "@/components/ui/primitives";
 import type { PushTarget, ScreenProps } from "@/lib/nav";
+import { useNotifications } from "@/lib/notifications";
 import { useData, useGateway, useModelConfig, useWhoami } from "@/lib/queries";
 
 export type Theme = "light" | "dark";
@@ -20,10 +21,14 @@ export function Settings({ nav, theme, setTheme }: ScreenProps & { theme: Theme;
   const openclawSub = status?.runtimeVersion
     ? `OpenClaw ${status.runtimeVersion} · ${gateway ? (gateway.ok ? "gateway healthy" : "gateway down") : "checking…"}`
     : "Gateway, channels & schedules";
+  const notes = useNotifications();
+  const notifSub = notes.loading ? "Checking…" : notes.items.length
+    ? `${notes.items.length} need${notes.items.length === 1 ? "s" : ""} attention${notes.unseen.length ? ` · ${notes.unseen.length} new` : ""}`
+    : "All clear";
   const groups: { header: string; rows: SettingsRow[] }[] = [
     { header: "Account", rows: [
       { icon: "users", color: "var(--accent)", title: "Profile", sub: `${name} · ${who}`, to: "profile" },
-      { icon: "bell", color: "var(--purple)", title: "Notifications", sub: "Push, email, alerts" },
+      { icon: "bell", color: "var(--purple)", title: "Notifications", sub: notifSub, to: "notifications" },
       { icon: "shield", color: "var(--ok)", title: "Security Center", sub: "Tunnel, Cloudflare login & device checks", to: "security" },
     ]},
     { header: "Server", rows: [

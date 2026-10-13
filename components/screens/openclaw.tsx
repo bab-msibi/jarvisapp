@@ -79,10 +79,13 @@ export function OpenClaw({ nav }: ScreenProps) {
           ))}
           {d.crons.map((c, i) => {
             const st = c.state?.lastRunStatus;
+            // A run can succeed but fail to post its result (e.g. to Discord)
+            const undelivered = st === "ok" && c.state?.lastDeliveryStatus === "not-delivered" && !!c.delivery?.mode && c.delivery.mode !== "none";
             return (
               <Row key={c.id ?? c.name} icon="clock" iconColor="var(--cyan)" title={c.name} last={i === d.crons.length - 1}
-                sub={[c.schedule?.expr, c.state?.nextRunAtMs ? `next ${new Date(c.state.nextRunAtMs).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : null].filter(Boolean).join(" · ")}
-                right={<Pill tone={st === "ok" ? "ok" : st === "error" ? "err" : "neutral"}>{c.enabled === false ? "off" : st || "pending"}</Pill>} />
+                sub={[c.schedule?.expr, undelivered ? `last run not posted to ${c.delivery?.channel ?? "its channel"}` : null,
+                  c.state?.nextRunAtMs ? `next ${new Date(c.state.nextRunAtMs).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : null].filter(Boolean).join(" · ")}
+                right={<Pill tone={undelivered ? "warn" : st === "ok" ? "ok" : st === "error" ? "err" : "neutral"}>{c.enabled === false ? "off" : undelivered ? "not delivered" : st || "pending"}</Pill>} />
             );
           })}
           {!d.crons.length && !status?.heartbeat?.agents?.length && <div style={{ padding: "14px 4px", fontSize: 13, color: "var(--text-faint)" }}>{d.loading ? "Loading…" : "No scheduled jobs"}</div>}

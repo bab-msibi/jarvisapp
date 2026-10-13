@@ -4,7 +4,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { Icon } from "@/components/ui/primitives";
 import { apiGet } from "@/lib/api";
-import { appendMessage, removePending, usePendingReplies, type PendingReply } from "@/lib/chat-store";
+import { addUnread, appendMessage, removePending, usePendingReplies, type PendingReply } from "@/lib/chat-store";
 import { useData, type ChatJob } from "@/lib/queries";
 
 export interface ReplyToast { id: string; agentId: string; title: string; body: string; error: boolean }
@@ -52,6 +52,7 @@ export function ChatReplyWatcher({ activeChatAgentId, onToast, chatUrl }: {
       removePending(p.jobId);
 
       if (p.agentId === activeChatAgentId && !document.hidden) return; // already looking at it
+      addUnread({ jobId: p.jobId, agentId: p.agentId, sessionId: p.sessionId, at: Date.now(), preview: text.replace(/\s+/g, " ").slice(0, 140), error: !ok });
       const name = agents.find((a) => a.id === p.agentId)?.name ?? p.agentId;
       const t: ReplyToast = {
         id: p.jobId, agentId: p.agentId, error: !ok,
