@@ -45,7 +45,7 @@ export function Tasks({ nav }: ScreenProps) {
               </div>
               <Icon name="plus" size={16} style={{ color: "var(--text-ghost)" }} />
             </div>
-            {tasksByCol[col].map(t => <TaskCard key={t.id} t={t} onClick={() => nav.push("taskDetail", { id: t.id, col })} />)}
+            {tasksByCol[col].map(t => <TaskCard key={t.id} t={t} onClick={() => nav.push("taskDetail", { id: t.id })} />)}
             {tasksByCol[col].length === 0 && <div style={{ height: 60, borderRadius: 14, border: "1.5px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-ghost)", fontSize: 12 }}>Drop here</div>}
           </div>
         ))}

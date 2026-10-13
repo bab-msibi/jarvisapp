@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ConnectionBadge, OfflineBanner } from "@/components/ui/connection";
-import { Dot, Header, Icon, Pill, type Tone } from "@/components/ui/primitives";
+import { Dot, Header, Icon, Pill, TopBar, type Tone } from "@/components/ui/primitives";
 import { relTime } from "@/lib/api";
 import type { ScreenProps } from "@/lib/nav";
 import { useAgentChat, useData, type ChatReply } from "@/lib/queries";
@@ -376,7 +376,7 @@ function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => void }) {
       )}
 
       {/* Input bar */}
-      <div style={{ padding: "12px 18px calc(20px + 80px + env(safe-area-inset-bottom, 0px))", borderTop: messages.length ? "1px solid var(--border)" : "none", background: "var(--bg)" }}>
+      <div style={{ padding: "12px 18px calc(14px + env(safe-area-inset-bottom, 0px))", borderTop: messages.length ? "1px solid var(--border)" : "none", background: "var(--bg)" }}>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", background: "var(--surface)", borderRadius: 20, padding: "8px 8px 8px 16px", border: "1px solid var(--border-strong)" }}>
           <textarea ref={inputRef} value={input} onChange={function(e) { setInput(e.target.value); }} onKeyDown={handleKey}
             placeholder={"Message " + agent.name + "…"} rows={1}
@@ -476,17 +476,40 @@ function AgentDetail({ agent, onClose, onChat }: { agent: Agent; onClose: () => 
   );
 }
 
-export function Agents(_: ScreenProps) {
+// Agent detail and chat are overlay screens addressed by agent id, so they have
+// their own URLs and the browser back button steps out of them
+function AgentNotFound({ nav, loading }: ScreenProps & { loading: boolean }) {
+  return (
+    <div className="screen" style={{ animation: "slideIn .35s cubic-bezier(.2,.7,.2,1)" }}>
+      <TopBar onBack={nav.pop} title="Agent" />
+      <div style={{ padding: 40, textAlign: "center", color: "var(--text-ghost)", fontSize: 14 }}>
+        {loading ? "Loading…" : `No agent called “${nav.params.id}”`}
+      </div>
+    </div>
+  );
+}
+
+export function AgentDetailScreen({ nav }: ScreenProps) {
+  const { agents, loading } = useData();
+  const agent = agents.find(a => a.id === nav.params.id);
+  if (!agent) return <AgentNotFound nav={nav} loading={loading} />;
+  return <AgentDetail agent={agent} onClose={nav.pop} onChat={() => nav.push("agentChat", { id: agent.id })} />;
+}
+
+export function AgentChatScreen({ nav }: ScreenProps) {
+  const { agents, loading } = useData();
+  const agent = agents.find(a => a.id === nav.params.id);
+  if (!agent) return <AgentNotFound nav={nav} loading={loading} />;
+  return <AgentChat key={agent.id} agent={agent} onClose={nav.pop} />;
+}
+
+export function Agents({ nav }: ScreenProps) {
   const d = useData();
-  const [selected, setSelected] = useState<Agent | null>(null);
-  const [chatAgent, setChatAgent] = useState<Agent | null>(null);
   const allAgents = d.agents;
   const [filter, setFilter] = useState("All");
   const filters = ["All", "Running", "Idle"];
   const list = allAgents.filter(a => filter === "All" || a.status === filter.toLowerCase());
 
-  if (chatAgent) return <AgentChat agent={chatAgent} onClose={() => setChatAgent(null)} />;
-  if (selected) return <AgentDetail agent={selected} onClose={() => setSelected(null)} onChat={() => { setChatAgent(selected); setSelected(null); }} />;
 
   return (
     <div className="screen pad-b anim-screen">
@@ -512,7 +535,7 @@ export function Agents(_: ScreenProps) {
         ))}
       </div>
       <div className="pad grid-cards" style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-        {list.length ? list.map(a => <AgentCard key={a.id} a={a} onClick={() => setSelected(a)} />) : (
+        {list.length ? list.map(a => <AgentCard key={a.id} a={a} onClick={() => nav.push("agentDetail", { id: a.id })} />) : (
           <div style={{ textAlign: "center", padding: 40, color: "var(--text-ghost)", fontSize: 14, gridColumn: "1 / -1" }}>No agents match filter</div>
         )}
       </div>

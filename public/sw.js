@@ -1,4 +1,4 @@
-const CACHE = "agent-cmd-v3";
+const CACHE = "agent-cmd-v4";
 const ASSETS = ["/", "/index.html", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
@@ -32,7 +32,10 @@ self.addEventListener("fetch", (e) => {
         return res;
       })
       .catch(() =>
-        caches.match(e.request).then((m) => m || new Response("Offline", { status: 503, statusText: "Offline" }))
+        caches.match(e.request)
+          // Every app URL serves the same page, so any screen can open offline from "/"
+          .then((m) => m || (e.request.mode === "navigate" ? caches.match("/") : undefined))
+          .then((m) => m || new Response("Offline", { status: 503, statusText: "Offline" }))
       )
   );
 });

@@ -34,6 +34,7 @@ export function Security({ nav }: ScreenProps) {
       : { title: "OpenClaw gateway", detail: gateway.error ? gateway.error.message : "Checking…", tone: gateway.error ? "err" : "neutral", label: gateway.error ? "Down" : "…" },
   ];
   const passing = checks.filter(c => c.tone === PASS).length;
+  const running = checks.some(c => c.label === "…");
   const score = Math.round((passing / checks.length) * 100);
 
   const recheck = () => { void tunnel.recheck(); void devices.refetch(); void gateway.refetch(); };
@@ -45,7 +46,7 @@ export function Security({ nav }: ScreenProps) {
         <div className="card" style={{ padding: 16, marginBottom: 18, display: "flex", alignItems: "center", gap: 16 }}>
           <Ring value={score} size={74} stroke={7} color={score === 100 ? "var(--ok)" : score >= 60 ? "var(--warn)" : "var(--err)"} label={`${passing}/${checks.length}`} sub="PASSING" />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 700 }}>{score === 100 ? "All checks passing" : `${checks.length - passing} item${checks.length - passing === 1 ? "" : "s"} need attention`}</div>
+            <div style={{ fontSize: 15.5, fontWeight: 700 }}>{running ? "Running checks…" : score === 100 ? "All checks passing" : `${checks.length - passing} item${checks.length - passing === 1 ? "" : "s"} need${checks.length - passing === 1 ? "s" : ""} attention`}</div>
             <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginTop: 3, lineHeight: 1.4 }}>
               {t ? `Last checked ${relTime(t.checkedAt)}` : "Running checks…"}
             </div>
