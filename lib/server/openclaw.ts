@@ -8,10 +8,29 @@ const EXEC_OPTS = { timeout: 30000, maxBuffer: 1024 * 1024 * 4 };
 
 type ExecError = Error & { code?: string | number; killed?: boolean };
 
+// Each CLI call is a full Node process with a multi-second startup. On this CPU-only
+// Mac (which also runs Ollama) spawning many at once makes them all slow enough to hit
+// the timeout, so short CLI calls queue behind a small concurrency limit.
+// Agent chat turns (which can take minutes) bypass it so they can't block the dashboard.
+const MAX_CONCURRENT = 3;
+const g = globalThis as typeof globalThis & { __ocQueue?: { active: number; waiting: (() => void)[] } };
+const queue = (g.__ocQueue ??= { active: 0, waiting: [] });
+
+export async function limited<T>(fn: () => Promise<T>): Promise<T> {
+  if (queue.active >= MAX_CONCURRENT) await new Promise<void>((r) => queue.waiting.push(r));
+  queue.active++;
+  try {
+    return await fn();
+  } finally {
+    queue.active--;
+    queue.waiting.shift()?.();
+  }
+}
+
 export async function oc<T = unknown>(args: string[]): Promise<T> {
   let stdout: string;
   try {
-    ({ stdout } = await execFileAsync(OPENCLAW, args, EXEC_OPTS));
+    ({ stdout } = await limited(() => execFileAsync(OPENCLAW, args, EXEC_OPTS)));
   } catch (e) {
     const err = e as ExecError;
     if (err.code === "ENOENT") throw new Error(`'${OPENCLAW}' CLI not found in PATH`);
@@ -32,7 +51,7 @@ export async function listAgents() {
 
 // `openclaw models list` has no --json, so parse its fixed-width table
 export async function listModels() {
-  const { stdout } = await execFileAsync(OPENCLAW, ["models", "list"], EXEC_OPTS);
+  const { stdout } = await limited(() => execFileAsync(OPENCLAW, ["models", "list"], EXEC_OPTS));
   const clean = stdout.replace(/\x1b\[[0-9;]*m/g, "");
   const [header = "", ...rows] = clean.trim().split("\n");
   const pos = ["Model", "Input", "Ctx", "Local", "Auth", "Tags"].map((c) => header.indexOf(c));

@@ -3,8 +3,8 @@
 import { useMutation, useQueries, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { apiGet, apiPost, relTime } from "./api";
 import type {
-  Agent, CronJob, DeviceView, ExecResult, FilesResponse, MarketResponse, McpStatus, Model, RawAgent,
-  RawModel, RawTask, Session, SystemStats, Task,
+  Agent, CronJob, DeviceView, ExecResult, FilesResponse, GatewayHealth, MarketResponse, McpStatus, Model, ModelConfig,
+  OpenClawStatus, RawAgent, RawModel, RawTask, Session, SystemStats, Task, TunnelStatus, Whoami,
 } from "./types";
 
 // ── Adapters: raw OpenClaw JSON → UI shapes ─────────────────────────────────
@@ -85,7 +85,7 @@ const CORE = ["agents", "tasks", "models", "status", "sessions", "cron", "system
 
 export interface DashboardData {
   agents: Agent[]; tasks: Task[]; models: Model[]; sessions: Session[]; crons: CronJob[];
-  status: Record<string, unknown> | null; sys: SystemStats | null;
+  status: OpenClawStatus | null; sys: SystemStats | null;
   connected: boolean | null; loading: boolean; refresh: () => void;
 }
 
@@ -110,7 +110,7 @@ export function useData(): DashboardData {
     models: ((modelsQ.data as { models?: RawModel[] } | undefined)?.models ?? []).map(adaptModel),
     sessions,
     crons,
-    status: (statusQ.data as Record<string, unknown> | undefined) ?? null,
+    status: (statusQ.data as OpenClawStatus | undefined) ?? null,
     sys: (sysQ.data as SystemStats | undefined) ?? null,
     connected: settled ? anyOk : null,
     loading: !settled,
@@ -166,3 +166,29 @@ export const useAgentChat = () =>
   useMutation({
     mutationFn: (v: { agentId: string; message: string; sessionKey?: string }) => apiPost<ChatReply>("/api/agent/chat", v),
   });
+
+export const useWhoami = () => useQuery({ queryKey: ["whoami"], queryFn: () => apiGet<Whoami>("/api/whoami"), staleTime: 60000 });
+
+export const useGateway = () =>
+  useQuery({ queryKey: ["gateway"], queryFn: () => apiGet<GatewayHealth>("/api/gateway"), refetchInterval: 30000 });
+
+export const useModelConfig = () => useQuery({ queryKey: ["modelConfig"], queryFn: () => apiGet<ModelConfig>("/api/models/config") });
+
+export function useSetDefaultModel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (model: string) => apiPost<ModelConfig>("/api/models/default", { model }),
+    onSuccess: (data) => {
+      qc.setQueryData(["modelConfig"], data);
+      ["models", "status", "agents"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    },
+  });
+}
+
+export function useTunnel() {
+  const qc = useQueryClient();
+  const query = useQuery({ queryKey: ["tunnel"], queryFn: () => apiGet<TunnelStatus>("/api/tunnel"), refetchInterval: 60000 });
+  // Re-run the live checks on demand (bypasses the server's cache)
+  const recheck = () => qc.fetchQuery({ queryKey: ["tunnel"], queryFn: () => apiGet<TunnelStatus>("/api/tunnel?refresh=1"), staleTime: 0 });
+  return { ...query, recheck };
+}

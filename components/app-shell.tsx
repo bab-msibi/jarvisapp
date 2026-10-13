@@ -4,9 +4,14 @@ import { Component, useEffect, useRef, useState, type ComponentType, type ErrorI
 import { Agents } from "@/components/screens/agents";
 import { LoginScreen, OnboardingScreen } from "@/components/screens/auth";
 import { Dashboard } from "@/components/screens/dashboard";
-import { AgentChatLegacy, CreateAgent, CreateTask, FileDetail, Models, MultiAgent, Notifications, Profile, TaskDetail, Upload } from "@/components/screens/details";
+import { Analytics } from "@/components/screens/analytics";
+import { DefaultModel } from "@/components/screens/default-model";
+import { AgentChatLegacy, CreateAgent, CreateTask, FileDetail, Models, MultiAgent, Notifications, TaskDetail, Upload } from "@/components/screens/details";
 import { Devices } from "@/components/screens/devices";
-import { Analytics, OpenClaw, Security, WorkflowBuilder } from "@/components/screens/extras";
+import { OpenClaw } from "@/components/screens/openclaw";
+import { Profile } from "@/components/screens/profile";
+import { Security } from "@/components/screens/security";
+import { WorkflowBuilder } from "@/components/screens/workflow";
 import { Files } from "@/components/screens/files";
 import { Mac } from "@/components/screens/mac";
 import { ClaudeMcp } from "@/components/screens/mcp";
@@ -38,7 +43,7 @@ const OVERLAYS: Record<OverlayScreen, ComponentType<ScreenProps>> = {
     agentChat: AgentChatLegacy, multiAgent: MultiAgent, terminal: Terminal, models: Models,
     openclaw: OpenClaw, mcp: ClaudeMcp, devices: Devices, workflow: WorkflowBuilder, notifications: Notifications,
     security: Security, analytics: Analytics, createAgent: CreateAgent, createTask: CreateTask,
-    taskDetail: TaskDetail, fileDetail: FileDetail, upload: Upload, profile: Profile,
+    taskDetail: TaskDetail, fileDetail: FileDetail, upload: Upload, profile: Profile, defaultModel: DefaultModel,
 };
 
 const TAB_SCREENS: Record<Exclude<TabId, "settings">, ComponentType<ScreenProps>> = {

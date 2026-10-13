@@ -372,21 +372,3 @@ export function CreateTask({ nav }: ScreenProps) {
     </GenericDetail>
   );
 }
-
-export function Profile({ nav }: ScreenProps) {
-  return (
-    <GenericDetail nav={nav} title="Profile">
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "10px 0 20px" }}>
-        <Avatar name="Alex Pierce" color="slate" size={84} />
-        <div style={{ fontSize: 20, fontWeight: 740, marginTop: 14, letterSpacing: -0.4 }}>Alex Pierce</div>
-        <div style={{ fontSize: 13.5, color: "var(--text-faint)", marginTop: 3 }}>admin@agentcmd.io</div>
-        <Pill tone="info" style={{ marginTop: 10 }}><Icon name="shield" size={11} stroke={2.4} />Administrator</Pill>
-      </div>
-      <div className="card" style={{ padding: "2px 14px" }}>
-        {[["Role", "Administrator"], ["Member since", "Jan 2025"], ["Last login", "Today, 10:24 AM"], ["Trusted devices", "2"]].map(([k, v], i) => (
-          <div key={k} className="between" style={{ padding: "13px 0", borderBottom: i < 3 ? "1px solid var(--border)" : "none" }}><span style={{ fontSize: 13.5, color: "var(--text-dim)" }}>{k}</span><span style={{ fontSize: 13.5, fontWeight: 580 }}>{v}</span></div>
-        ))}
-      </div>
-    </GenericDetail>
-  );
-}

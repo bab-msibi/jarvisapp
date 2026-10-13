@@ -21,3 +21,7 @@ export function cached<T>(key: string, ttl: number, fn: () => Promise<T>): Promi
   CACHE.set(key, { ts: 0, data: null, pending: promise });
   return promise;
 }
+
+export function invalidate(...keys: string[]) {
+  keys.forEach((k) => CACHE.delete(k));
+}

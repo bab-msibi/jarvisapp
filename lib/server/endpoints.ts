@@ -1,5 +1,6 @@
 // Cached read-only endpoints, shared by the route handlers and the startup warm-up
 import { cached } from "./cache";
+import { gatewayHealth, modelConfig, tunnelStatus } from "./insights";
 import { listAgents, listModels, oc } from "./openclaw";
 import { systemStats } from "./system";
 
@@ -11,6 +12,9 @@ const ENDPOINTS = {
   status: { ttl: 20000, load: () => oc(["status", "--json"]) },
   models: { ttl: 20000, load: listModels },
   system: { ttl: 10000, load: systemStats },
+  gateway: { ttl: 20000, load: gatewayHealth },
+  modelConfig: { ttl: 20000, load: modelConfig },
+  tunnel: { ttl: 60000, load: tunnelStatus },
 };
 
 export type EndpointName = keyof typeof ENDPOINTS;
