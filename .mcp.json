@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "jarvis": {
+      "command": "node",
+      "args": ["mcp-server.js"],
+      "env": { "JARVIS_URL": "http://127.0.0.1:3000" }
+    }
+  }
+}

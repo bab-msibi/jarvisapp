@@ -23,7 +23,7 @@ class HttpError extends Error {
 
 // Simple in-memory cache — openclaw CLI takes ~15s cold start, so cache results
 const CACHE = new Map();
-const CACHE_TTL = { default: 20000, "/api/system": 10000, "/api/files": 30000, "/api/health": 0 };
+const CACHE_TTL = { default: 20000, "/api/system": 10000, "/api/files": 30000, "/api/health": 0, "/api/mcp": 0 };
 
 function cached(key, ttl, fn) {
   const now = Date.now();
@@ -64,6 +64,64 @@ async function oc(args) {
   }
 }
 
+// --- Claude MCP setup ---
+const MCP_NAME = "jarvis";
+const MCP_SCRIPT = path.join(DIR, "mcp-server.js");
+const CLAUDE_DESKTOP_CONFIG = path.join(require("os").homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
+const CLAUDE_CODE_CONFIG = path.join(require("os").homedir(), ".claude.json");
+
+// GUI apps like Claude Desktop don't inherit the shell PATH, so use an absolute node path —
+// preferring Homebrew's stable symlink over the versioned Cellar path that breaks on upgrade
+function nodePath() {
+  for (const p of ["/opt/homebrew/bin/node", "/usr/local/bin/node"]) {
+    try { if (fs.realpathSync(p) === fs.realpathSync(process.execPath)) return p; } catch {}
+  }
+  return process.execPath;
+}
+
+function mcpEntry() {
+  return { command: nodePath(), args: [MCP_SCRIPT], env: { JARVIS_URL: `http://${HOST}:${PORT}` } };
+}
+
+function readJsonFile(file) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { return e.code === "ENOENT" ? null : undefined; }
+}
+
+function mcpStatus() {
+  const desktop = readJsonFile(CLAUDE_DESKTOP_CONFIG);
+  const code = readJsonFile(CLAUDE_CODE_CONFIG);
+  const projectMcp = readJsonFile(path.join(DIR, ".mcp.json"));
+  const { tools } = require("./mcp-server.js");
+  const entry = mcpEntry();
+  return {
+    name: MCP_NAME,
+    script: MCP_SCRIPT,
+    tools: tools.map(t => ({ name: t.name, description: t.description })),
+    desktop: {
+      installed: !!desktop?.mcpServers?.[MCP_NAME],
+      appFound: desktop !== null || fs.existsSync(path.dirname(CLAUDE_DESKTOP_CONFIG)),
+      configPath: CLAUDE_DESKTOP_CONFIG,
+    },
+    code: {
+      userInstalled: !!code?.mcpServers?.[MCP_NAME],
+      projectInstalled: !!projectMcp?.mcpServers?.[MCP_NAME],
+      command: `claude mcp add --scope user ${MCP_NAME} -e JARVIS_URL=${entry.env.JARVIS_URL} -- node "${MCP_SCRIPT}"`,
+    },
+    config: { mcpServers: { [MCP_NAME]: entry } },
+  };
+}
+
+function installDesktopMcp() {
+  const current = readJsonFile(CLAUDE_DESKTOP_CONFIG);
+  if (current === undefined) throw new HttpError(409, "Claude Desktop config exists but isn't valid JSON — fix it by hand first");
+  const config = current || {};
+  if (current) fs.copyFileSync(CLAUDE_DESKTOP_CONFIG, `${CLAUDE_DESKTOP_CONFIG}.bak`);
+  else fs.mkdirSync(path.dirname(CLAUDE_DESKTOP_CONFIG), { recursive: true });
+  config.mcpServers = { ...(config.mcpServers || {}), [MCP_NAME]: mcpEntry() };
+  fs.writeFileSync(CLAUDE_DESKTOP_CONFIG, JSON.stringify(config, null, 2) + "\n");
+  return mcpStatus();
+}
+
 // --- API handlers ---
 const API = {
   // Cheap liveness probe — no CLI dependency, lets the UI tell "server down"
@@ -74,6 +132,8 @@ const API = {
     pid: process.pid,
     timestamp: Date.now(),
   }),
+
+  "/api/mcp": async () => mcpStatus(),
 
   "/api/status": async () => oc(["status", "--json"]),
 
@@ -427,7 +487,7 @@ async function handlePost(pathname, body) {
 
     try {
       const { stdout, stderr } = await execFileAsync(OPENCLAW, args, {
-        timeout: 240000,
+        timeout: 620000,
         maxBuffer: 1024 * 1024 * 4,
       });
       // openclaw agent --json outputs a JSON object on success
@@ -463,6 +523,8 @@ async function handlePost(pathname, body) {
     args.push(prompt);
     return oc(args);
   }
+
+  if (pathname === "/api/mcp/install-desktop") return installDesktopMcp();
 
   throw new HttpError(404, "Unknown route");
 }
@@ -605,7 +667,7 @@ server.on("error", (e) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`\nJarvis PWA running at http://${HOST}:${PORT}`);
-  console.log("API endpoints: /api/health /api/status /api/agents /api/tasks /api/sessions /api/models /api/cron /api/system /api/files /api/exec\n");
+  console.log("API endpoints: /api/health /api/status /api/agents /api/tasks /api/sessions /api/models /api/cron /api/system /api/files /api/exec /api/mcp\n");
   // Pre-warm cache in background so first browser load is fast
   const warm = ["/api/agents", "/api/status", "/api/sessions", "/api/cron", "/api/tasks", "/api/models", "/api/system"];
   warm.forEach(k => {

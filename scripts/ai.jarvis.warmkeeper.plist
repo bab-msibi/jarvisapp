@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.jarvis.warmkeeper</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/admin/App/jarvisapp/scripts/keep-warm.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>240</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/admin/App/jarvisapp/scripts/keep-warm.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/admin/App/jarvisapp/scripts/keep-warm.log</string>
+</dict>
+</plist>

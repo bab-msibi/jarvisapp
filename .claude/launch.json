@@ -4,8 +4,22 @@
     {
       "name": "app",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["server.js"],
+      "runtimeArgs": [
+        "server.js"
+      ],
       "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "app-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server.js"
+      ],
+      "env": {
+        "PORT": "3001"
+      },
+      "port": 3001,
       "autoPort": false
     }
   ]
