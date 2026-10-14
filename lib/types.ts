@@ -35,7 +35,7 @@ export interface RawAgent {
 }
 export interface Session {
   sessionId?: string; agentId?: string; kind?: string; updatedAt?: number; totalTokens?: number | null; key?: string;
-  inputTokens?: number; outputTokens?: number; model?: string; contextTokens?: number;
+  inputTokens?: number; outputTokens?: number; model?: string; contextTokens?: number; totalTokensFresh?: boolean;
 }
 export interface OpenClawStatus {
   runtimeVersion?: string;
