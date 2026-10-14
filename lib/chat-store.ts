@@ -1,9 +1,12 @@
 "use client";
 
-// Agent chat history and in-flight replies, shared by the whole app and saved to
-// localStorage. Replies are background jobs on the server, so one can land after
-// you've left the chat or reloaded the page — the watcher (components/chat-replies)
-// writes it into the right conversation and announces it.
+// Agent chat history and in-flight replies, shared by the whole app and cached in
+// localStorage. OpenClaw's transcripts are the source of truth for messages (so every
+// device sees the same chats); this cache adds what only this browser knows: messages
+// still being sent, sends that failed, and per-chat model choices.
+// Replies are background jobs on the server, so one can land after you've left the chat
+// or reloaded the page — the watcher (components/chat-replies) writes it into the right
+// conversation and announces it.
 import { useSyncExternalStore } from "react";
 
 export interface ChatMessage { role: "user" | "agent"; text: string; id: number; model?: string | null; error?: boolean }
@@ -52,6 +55,36 @@ export function saveSession(session: ChatSession) {
 export function appendMessage(agentId: string, sessionId: string, message: ChatMessage) {
   const s = getSessions(agentId).find((x) => x.id === sessionId);
   if (s) saveSession({ ...s, messages: [...s.messages, message] });
+}
+
+export function removeMessage(agentId: string, sessionId: string, messageId: number) {
+  const s = getSessions(agentId).find((x) => x.id === sessionId);
+  if (s) saveSession({ ...s, messages: s.messages.filter((m) => m.id !== messageId) });
+}
+
+export interface ServerMessage { role: "user" | "agent"; text: string; at: number; model?: string | null; error?: boolean }
+
+// Replace a chat's messages with OpenClaw's transcript, keeping local-only messages that are
+// newer than it: a question still on its way, or a send that failed before reaching OpenClaw
+export function syncFromServer(agentId: string, sessionId: string, server: ServerMessage[], updatedAt?: number) {
+  const existing = getSessions(agentId).find((x) => x.id === sessionId);
+  if (!server.length && !existing) return;
+  const lastAt = server.reduce((max, m) => Math.max(max, m.at), 0);
+  const fromServer: ChatMessage[] = server.map((m, i) => ({ role: m.role, text: m.text, id: m.at || i, model: m.model ?? null, error: m.error }));
+  // (a local error after a server-side error is the same failure seen twice)
+  const serverEndsInError = !!server.at(-1)?.error;
+  const localOnly = (existing?.messages ?? []).filter((m) => m.id > lastAt && (m.role === "user" || (m.error && !serverEndsInError)));
+  const merged = [...fromServer, ...localOnly];
+  if (existing && existing.messages.length === merged.length && existing.messages.every((m, i) => m.text === merged[i].text && m.role === merged[i].role)) return;
+  const list = getSessions(agentId);
+  const session: ChatSession = existing
+    ? { ...existing, messages: merged }
+    : { id: sessionId, agentId, createdAt: server[0]?.at || Date.now(), messages: merged };
+  session.updatedAt = Math.max(existing?.updatedAt ?? 0, updatedAt ?? 0, lastAt) || Date.now();
+  const next = (existing ? list.map((x) => (x.id === sessionId ? session : x)) : [...list, session]).slice(-MAX_SESSIONS);
+  histories.set(agentId, next);
+  write(historyKey(agentId), next);
+  emit();
 }
 
 export function getPending(): PendingReply[] {

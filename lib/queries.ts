@@ -2,6 +2,7 @@
 
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { apiGet, apiPost, relTime } from "./api";
+import type { ServerMessage } from "@/lib/chat-store";
 import type { CronRun } from "@/lib/server/cron";
 import type {
   Agent, CronJob, DeviceView, DigestResponse, ExecResult, FilesResponse, GatewayHealth, MarketResponse, McpStatus, Model, ModelConfig,
@@ -244,6 +245,26 @@ export interface ChatJob {
 
 export const startChat = (v: { agentId: string; message: string; sessionKey: string; model?: string | null }) =>
   apiPost<{ job: ChatJob }>("/api/agent/chat", { ...v, model: v.model || undefined, async: true });
+
+export interface AppChatSummary { id: string; updatedAt: number; model: string | null; count: number; preview: string }
+
+// App chats as OpenClaw stored them (shared across devices)
+export const useServerChats = (agentId: string) =>
+  useQuery({
+    queryKey: ["appChats", agentId],
+    queryFn: () => apiGet<{ chats: AppChatSummary[] }>(`/api/agent/chat/history?agentId=${encodeURIComponent(agentId)}`),
+    refetchInterval: 30000,
+  });
+
+export const useServerChatMessages = (agentId: string, chatId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ["appChat", agentId, chatId],
+    queryFn: () => apiGet<{ messages: ServerMessage[] }>(`/api/agent/chat/history?agentId=${encodeURIComponent(agentId)}&chat=${encodeURIComponent(chatId)}`),
+    enabled,
+    refetchInterval: 30000,
+  });
+
+export const stopChat = (jobId: string) => apiPost<{ job: ChatJob }>(`/api/agent/chat/jobs/${encodeURIComponent(jobId)}/stop`);
 
 export const useWhoami = () => useQuery({ queryKey: ["whoami"], queryFn: () => apiGet<Whoami>("/api/whoami"), staleTime: 60000 });
 

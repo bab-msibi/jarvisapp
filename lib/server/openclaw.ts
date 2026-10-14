@@ -87,32 +87,45 @@ export function replyText(raw: unknown): string {
 
 // One agent turn. `model` overrides the agent's model for this turn only — OpenClaw
 // accepts overrides only for models in the agent's allowlist (agents.defaults.models).
-export async function agentChat(agentId: string, message: string, sessionKey?: string, model?: string) {
+export function agentArgs(agentId: string, message: string, sessionKey?: string, model?: string) {
   const args = ["agent", "--agent", agentId, "--message", message, "--json"];
   if (sessionKey) args.push("--session-key", sessionKey);
   if (model) args.push("--model", model);
+  return args;
+}
+
+// `openclaw agent --json` output, minus log lines (they start with "[")
+export function parseAgentOutput(stdout: string, sessionKey?: string): unknown {
+  const jsonText = stdout.trim().split("\n").filter((l) => !l.startsWith("[") && l.trim()).join("\n").trim();
+  if (!jsonText) throw new Error("Agent returned no response");
   try {
-    const { stdout, stderr } = await execFileAsync(OPENCLAW, args, { timeout: 620000, maxBuffer: 1024 * 1024 * 4 });
-    // Filter out log lines (start with "[")
-    const jsonText = stdout.trim().split("\n").filter((l) => !l.startsWith("[") && l.trim()).join("\n").trim();
-    if (!jsonText) throw Object.assign(new Error("Agent returned no response"), { stderr });
-    try {
-      return JSON.parse(jsonText);
-    } catch {
-      return { reply: jsonText, sessionKey };
-    }
+    return JSON.parse(jsonText);
+  } catch {
+    return { reply: jsonText, sessionKey };
+  }
+}
+
+// OpenClaw's own error line from stderr, not the failed command (which would echo the message)
+export function agentErrorMessage(stderr: string | undefined, fallback: string) {
+  const detail = (stderr || "").split("\n").filter((l) => l.trim() && !l.startsWith("[")).pop() || fallback;
+  const msg = detail.replace(/^(?:\w*Error:\s*)+/, "");
+  const harness = msg.match(/agent harness "([^"]+)" is not registered/);
+  return harness
+    ? `This model needs OpenClaw's "${harness[1]}" agent runtime, which isn't installed. Pick another model for this chat.`
+    : msg.slice(0, 500) || "Agent error";
+}
+
+export async function agentChat(agentId: string, message: string, sessionKey?: string, model?: string) {
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync(OPENCLAW, agentArgs(agentId, message, sessionKey, model), { timeout: 620000, maxBuffer: 1024 * 1024 * 4 }));
   } catch (e) {
     const err = e as ExecError & { stderr?: string };
     if (err.code === "ENOENT") throw new Error(`'${OPENCLAW}' CLI not found in PATH`);
     if (err.killed || err.code === "ETIMEDOUT") throw new Error("Agent timed out. The model may be loading — try again.");
-    // Report OpenClaw's own error line, not the failed command (which would echo the message)
-    const detail = (err.stderr || "").split("\n").filter((l) => l.trim() && !l.startsWith("[")).pop() || err.message;
-    const msg = detail.replace(/^(?:\w*Error:\s*)+/, "");
-    const harness = msg.match(/agent harness "([^"]+)" is not registered/);
-    throw new HttpError(500, harness
-      ? `This model needs OpenClaw's "${harness[1]}" agent runtime, which isn't installed. Pick another model for this chat.`
-      : msg.slice(0, 500) || "Agent error");
+    throw new HttpError(500, agentErrorMessage(err.stderr, err.message));
   }
+  return parseAgentOutput(stdout, sessionKey);
 }
 
 // One-shot agent turn (MCP run_agent). `openclaw agent` needs --agent and -m; without an id, use the default agent

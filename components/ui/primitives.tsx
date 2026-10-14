@@ -29,6 +29,7 @@ export const ICONS = {
   chevR: "M9 6l6 6-6 6", chevL: "M15 6l-6 6 6 6", chevD: "M6 9l6 6 6-6", chevU: "M6 15l6-6 6 6",
   plus: "M12 5v14M5 12h14", minus: "M5 12h14",
   play: "M7 5l12 7-12 7z", pause: "M8 5v14M16 5v14", stop: "M6 6h12v12H6z",
+  copy: "M9 9h11v11H9zM5 15H4V4h11v1",
   mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
   send: "M4 12l16-7-7 16-2-7z", search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4",
   x: "M6 6l12 12M18 6L6 18", check: "M5 12l5 5L20 6",

@@ -47,11 +47,12 @@ export function ChatReplyWatcher({ activeChatAgentId, onToast, chatUrl }: {
       if (!lost && (!job || job.status === "running")) return;
 
       const ok = job?.status === "done";
-      const text = ok ? job!.reply ?? "" : lost ? "This reply was lost because Jarvis restarted while waiting. Please send your message again." : job?.error ?? "Agent error";
+      const stopped = job?.error === "Stopped";
+      const text = ok ? job!.reply ?? "" : stopped ? "Stopped before it finished replying." : lost ? "This reply couldn't be found on the server. Please send your message again." : job?.error ?? "Agent error";
       appendMessage(p.agentId, p.sessionId, { role: "agent", text, id: Date.now(), model: ok ? job!.usedModel : null, error: !ok });
       removePending(p.jobId);
 
-      if (p.agentId === activeChatAgentId && !document.hidden) return; // already looking at it
+      if (stopped || (p.agentId === activeChatAgentId && !document.hidden)) return; // you did it / already looking at it
       addUnread({ jobId: p.jobId, agentId: p.agentId, sessionId: p.sessionId, at: Date.now(), preview: text.replace(/\s+/g, " ").slice(0, 140), error: !ok });
       const name = agents.find((a) => a.id === p.agentId)?.name ?? p.agentId;
       const t: ReplyToast = {

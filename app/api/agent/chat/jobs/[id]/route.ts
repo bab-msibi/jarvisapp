@@ -8,7 +8,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const { id } = await ctx.params;
   return handle(() => {
     const job = getChatJob(id);
-    if (!job) throw new HttpError(404, "Chat job not found (the server may have restarted)");
+    if (!job) throw new HttpError(404, "Chat job not found");
     return { job };
   })(req);
 }

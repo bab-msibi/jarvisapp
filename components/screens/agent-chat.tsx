@@ -2,14 +2,37 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AgentEmoji } from "@/components/ui/agent-emoji";
+import { Markdown } from "@/components/ui/markdown";
 import { Header, Icon, Pill, Sheet } from "@/components/ui/primitives";
 import {
-  addPending, appendMessage, clearUnread, latestSession, newChatSession, saveSession, useChatSessions, usePendingReplies, type ChatSession,
+  addPending, appendMessage, clearUnread, latestSession, newChatSession, removeMessage, saveSession, syncFromServer,
+  useChatSessions, usePendingReplies, type ChatMessage, type ChatSession,
 } from "@/lib/chat-store";
-import { startChat, useData, useModelConfig } from "@/lib/queries";
+import { startChat, stopChat, useData, useModelConfig, useServerChatMessages, useServerChats, type AppChatSummary } from "@/lib/queries";
 import type { Agent, Model } from "@/lib/types";
 
 const sessionKey = (agentId: string, sessionId: string) => `agent:${agentId}:${sessionId}`;
+
+// App chats default to a cloud model: the local 3B model often answers with a tool call instead of text.
+// Each chat can still pick any allowed model; agents' scheduled jobs keep their own model.
+const APP_CHAT_MODEL = "google/gemini-2.5-flash";
+
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); } catch {
+      const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select();
+      try { document.execCommand("copy"); } catch {} t.remove();
+    }
+    setDone(true); setTimeout(() => setDone(false), 1500);
+  };
+  return (
+    <button className="tap" onClick={() => void copy()} title="Copy reply"
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: done ? "var(--ok)" : "var(--text-ghost)", padding: "2px 4px" }}>
+      <Icon name={done ? "check" : "copy"} size={12} stroke={2} />{done ? "Copied" : "Copy"}
+    </button>
+  );
+}
 
 function fmtElapsed(ms: number) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -39,10 +62,26 @@ function requestNotifyPermission() {
   if (typeof Notification !== "undefined" && Notification.permission === "default") void Notification.requestPermission().catch(() => {});
 }
 
-function ChatHistory({ agent, sessions, onSelect, onNew, onClose }: {
-  agent: Agent; sessions: ChatSession[]; onSelect: (s: ChatSession) => void; onNew: () => void; onClose: () => void;
+interface ChatEntry { id: string; updatedAt: number; count: number; preview: string }
+
+// This browser's chats plus the ones OpenClaw has from other devices, newest first
+function mergeChats(local: ChatSession[], server: AppChatSummary[]): ChatEntry[] {
+  const byId = new Map<string, ChatEntry>();
+  for (const s of local) {
+    const last = s.messages.at(-1);
+    byId.set(s.id, { id: s.id, updatedAt: s.updatedAt ?? s.createdAt, count: s.messages.length, preview: last ? last.text.slice(0, 120) : "Empty chat" });
+  }
+  for (const c of server) {
+    const mine = byId.get(c.id);
+    if (!mine || c.updatedAt >= mine.updatedAt) byId.set(c.id, { id: c.id, updatedAt: Math.max(c.updatedAt, mine?.updatedAt ?? 0), count: Math.max(c.count, mine?.count ?? 0), preview: c.preview || mine?.preview || "" });
+  }
+  return [...byId.values()].filter(c => c.count > 0).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+function ChatHistory({ agent, chats, onSelect, onNew, onClose }: {
+  agent: Agent; chats: ChatEntry[]; onSelect: (id: string) => void; onNew: () => void; onClose: () => void;
 }) {
-  const sorted = [...sessions].sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+  const sorted = chats;
   return (
     <div className="screen anim-screen" style={{ display: "flex", flexDirection: "column" }}>
       <Header title="Chat History" sub={agent.name} onBack={onClose}
@@ -59,15 +98,15 @@ function ChatHistory({ agent, sessions, onSelect, onNew, onClose }: {
           <div style={{ textAlign: "center", padding: 48, color: "var(--text-ghost)", fontSize: 14 }}>No previous chats. Start one!</div>
         )}
         {sorted.map(s => {
-          const preview = s.messages.length ? s.messages[s.messages.length - 1].text.slice(0, 80) : "Empty chat";
-          const dateStr = new Date(s.updatedAt ?? s.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+          const preview = s.preview.slice(0, 80) || "Empty chat";
+          const dateStr = new Date(s.updatedAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
           return (
-            <button key={s.id} className="tap card" onClick={() => onSelect(s)}
+            <button key={s.id} className="tap card" onClick={() => onSelect(s.id)}
               style={{ width: "100%", textAlign: "left", padding: "14px 16px", marginBottom: 10, display: "block" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
                 <span style={{ fontSize: 12, color: "var(--text-ghost)" }}>{dateStr}</span>
                 <span style={{ fontSize: 11, color: "var(--text-ghost)", background: "var(--surface-2)", borderRadius: 100, padding: "2px 8px" }}>
-                  {s.messages.length} msg{s.messages.length !== 1 ? "s" : ""}
+                  {s.count} msg{s.count !== 1 ? "s" : ""}
                 </span>
               </div>
               <div style={{ fontSize: 13.5, color: "var(--text-dim)", lineHeight: 1.4 }} className="clip">{preview}</div>
@@ -84,11 +123,13 @@ export function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => voi
   const pendingAll = usePendingReplies();
   const { models } = useData();
   const { data: modelCfg } = useModelConfig();
+  const serverChats = useServerChats(agent.id);
 
   // Open the conversation with the latest activity; a new chat is a draft until its first message
   const [activeId, setActiveId] = useState(() => latestSession(sessions)?.id ?? null);
   const [draft, setDraft] = useState<ChatSession>(() => newChatSession(agent.id));
-  const active = sessions.find(s => s.id === activeId) ?? draft;
+  // A chat that so far exists only in OpenClaw (from another device) shows up once its messages load
+  const active = sessions.find(s => s.id === activeId) ?? (activeId ? { id: activeId, agentId: agent.id, createdAt: Date.now(), messages: [] } : draft);
 
   const [showHistory, setShowHistory] = useState(false);
   const [pickModel, setPickModel] = useState(false);
@@ -101,9 +142,32 @@ export function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => voi
   const waiting = !!pending || starting;
   const now = useNow(!!pending);
   const defaultModel = modelCfg?.defaultModel ?? null;
-  const currentModel = active.model ?? defaultModel; // null until the config loads
   const chatModels = modelCfg?.chatModels ?? [];
-  // Until OpenClaw's model config loads, show the agent's own model (from the agent list)
+  // Until OpenClaw's model list loads, assume the app default is allowed (it's checked server-side)
+  const appDefault = !chatModels.length || chatModels.includes(APP_CHAT_MODEL) ? APP_CHAT_MODEL : defaultModel;
+  const currentModel = active.model ?? appDefault;
+
+  // OpenClaw's transcript is the source of truth; refresh it when a reply lands
+  const saved = !!activeId;
+  const serverMsgs = useServerChatMessages(agent.id, active.id, saved);
+  useEffect(() => {
+    if (serverMsgs.data) syncFromServer(agent.id, active.id, serverMsgs.data.messages);
+  }, [serverMsgs.data, agent.id, active.id]);
+  const wasPending = useRef(false);
+  const refetchAll = useRef(() => {});
+  refetchAll.current = () => { void serverMsgs.refetch(); void serverChats.refetch(); };
+  useEffect(() => {
+    if (wasPending.current && !pending) refetchAll.current();
+    wasPending.current = !!pending;
+  }, [pending]);
+  // Nothing in this browser yet: open the latest chat from another device
+  const pickedServer = useRef(false);
+  useEffect(() => {
+    const latest = serverChats.data?.chats.find(c => c.count > 0);
+    if (pickedServer.current || activeId || draft.messages.length || !latest) return;
+    pickedServer.current = true;
+    setActiveId(latest.id);
+  }, [serverChats.data, activeId, draft.messages.length]);
   const current = currentModel ? describeModel(currentModel, models) : { name: agent.model, where: agent.modelProvider === "ollama" ? "On this Mac" : "Cloud" };
 
   useEffect(() => {
@@ -113,8 +177,8 @@ export function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => voi
   // Opening the chat (or a reply landing while it's open) marks this agent's replies as read
   useEffect(() => { clearUnread(agent.id); }, [agent.id, sessions]);
 
-  function openSession(s: ChatSession) {
-    setActiveId(s.id); setShowHistory(false); setInput("");
+  function openSession(id: string) {
+    setActiveId(id); setShowHistory(false); setInput("");
   }
 
   function startNewChat() {
@@ -124,7 +188,7 @@ export function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => voi
   }
 
   function chooseModel(id: string) {
-    const model = id === defaultModel ? null : id;
+    const model = id === appDefault ? null : id;
     if (sessions.some(s => s.id === active.id)) saveSession({ ...active, model });
     else setDraft({ ...active, model });
     setPickModel(false);
@@ -133,14 +197,31 @@ export function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => voi
   async function send() {
     const text = input.trim();
     if (!text || waiting) return;
-    requestNotifyPermission();
     setInput("");
-    const session: ChatSession = { ...active, messages: [...active.messages, { role: "user", text, id: Date.now() }] };
+    await dispatch(text, { ...active, messages: [...active.messages, { role: "user", text, id: Date.now() }] });
+  }
+
+  // Ask again after a failure: drop the error and resend the question before it
+  async function retry(errorMsg: ChatMessage) {
+    if (waiting) return;
+    const idx = active.messages.findIndex(m => m.id === errorMsg.id);
+    const question = [...active.messages.slice(0, idx)].reverse().find(m => m.role === "user");
+    if (!question) return;
+    removeMessage(agent.id, active.id, errorMsg.id);
+    await dispatch(question.text, { ...active, messages: active.messages.filter(m => m.id !== errorMsg.id) });
+  }
+
+  async function stop() {
+    if (pending) { try { await stopChat(pending.jobId); } catch {} }
+  }
+
+  async function dispatch(text: string, session: ChatSession) {
+    requestNotifyPermission();
     saveSession(session);
     setActiveId(session.id);
     setStarting(true);
     try {
-      const { job } = await startChat({ agentId: agent.id, message: text, sessionKey: sessionKey(agent.id, session.id), model: session.model });
+      const { job } = await startChat({ agentId: agent.id, message: text, sessionKey: sessionKey(agent.id, session.id), model: session.model ?? appDefault });
       addPending({ jobId: job.id, agentId: agent.id, sessionId: session.id, startedAt: job.startedAt, model: job.model });
     } catch (e) {
       // Saved into the conversation (not just shown) so it's still there if you've left the chat
@@ -159,12 +240,12 @@ export function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => voi
   }
 
   if (showHistory) {
-    return <ChatHistory agent={agent} sessions={sessions} onSelect={openSession} onNew={startNewChat} onClose={() => setShowHistory(false)} />;
+    return <ChatHistory agent={agent} chats={mergeChats(sessions, serverChats.data?.chats ?? [])} onSelect={openSession} onNew={startNewChat} onClose={() => setShowHistory(false)} />;
   }
 
   const messages = active.messages;
   const elapsed = pending ? now - pending.startedAt : 0;
-  const pendingModel = pending?.model ?? defaultModel;
+  const pendingModel = pending?.model ?? appDefault;
   const pendingLocal = pendingModel ? describeModel(pendingModel, models).where === "On this Mac" : true;
 
   return (
@@ -237,13 +318,22 @@ export function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => voi
                   background: msg.role === "user" ? "var(--accent)" : msg.error ? "rgba(239,68,68,0.08)" : "var(--surface)",
                   border: msg.error ? "1px solid rgba(239,68,68,0.25)" : undefined,
                   color: msg.role === "user" ? "#fff" : msg.error ? "var(--err)" : "var(--text)",
-                  fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                  fontSize: 14, lineHeight: 1.5, whiteSpace: msg.role === "agent" && !msg.error ? "normal" : "pre-wrap", wordBreak: "break-word",
                 }}>
                   {msg.error && <Icon name="warn" size={14} stroke={2} style={{ verticalAlign: -2, marginRight: 6 }} />}
-                  {msg.text}
+                  {msg.role === "agent" && !msg.error ? <Markdown text={msg.text} /> : msg.text}
                 </div>
-                {msg.role === "agent" && msg.model && (
-                  <div className="mono" style={{ fontSize: 10.5, color: "var(--text-ghost)", marginTop: 4, marginLeft: 4 }}>{msg.model}</div>
+                {msg.role === "agent" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3, marginLeft: 2 }}>
+                    {msg.model && <span className="mono" style={{ fontSize: 10.5, color: "var(--text-ghost)" }}>{msg.model}</span>}
+                    {!msg.error && <CopyButton text={msg.text} />}
+                    {msg.error && msg === messages.at(-1) && (
+                      <button className="tap" onClick={() => void retry(msg)} disabled={waiting}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 620, color: "var(--accent)", padding: "2px 4px" }}>
+                        <Icon name="refresh" size={12} stroke={2.2} />Retry
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -277,18 +367,27 @@ export function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => voi
             placeholder={waiting ? `${agent.name} is replying…` : `Message ${agent.name}…`} rows={1}
             style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: 14.5,
               fontFamily: "inherit", resize: "none", maxHeight: 120, lineHeight: 1.5, paddingTop: 2 }} />
-          <button className="tap" onClick={() => void send()} disabled={!input.trim() || waiting}
-            style={{ width: 38, height: 38, borderRadius: "50%", background: input.trim() && !waiting ? "var(--accent)" : "var(--surface-2)",
-              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              color: input.trim() && !waiting ? "#fff" : "var(--text-ghost)", transition: "background 0.15s" }}>
-            <Icon name="send" size={17} stroke={2.2} />
-          </button>
+          {pending ? (
+            <button className="tap" onClick={() => void stop()} title="Stop this reply"
+              style={{ width: 38, height: 38, borderRadius: "50%", background: "var(--surface-2)", border: "1px solid var(--border-strong)",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "var(--text)" }}>
+              <Icon name="stop" size={14} stroke={2.4} fill="currentColor" />
+            </button>
+          ) : (
+            <button className="tap" onClick={() => void send()} disabled={!input.trim() || waiting}
+              style={{ width: 38, height: 38, borderRadius: "50%", background: input.trim() && !waiting ? "var(--accent)" : "var(--surface-2)",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                color: input.trim() && !waiting ? "#fff" : "var(--text-ghost)", transition: "background 0.15s" }}>
+              <Icon name="send" size={17} stroke={2.2} />
+            </button>
+          )}
         </div>
       </div>
 
       <Sheet open={pickModel} onClose={() => setPickModel(false)} title="Model for this chat">
         <p style={{ fontSize: 13, color: "var(--text-faint)", margin: "0 0 14px", lineHeight: 1.5 }}>
-          Only changes this conversation. {agent.name}&apos;s default and scheduled jobs keep using <span className="mono">{defaultModel?.replace(/^[^/]+\//, "")}</span>.
+          Only changes this conversation. New chats start on <span className="mono">{appDefault?.replace(/^[^/]+\//, "")}</span>;
+          {" "}{agent.name}&apos;s scheduled jobs keep their own model (<span className="mono">{defaultModel?.replace(/^[^/]+\//, "")}</span> by default).
         </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {chatModels.map(id => {
@@ -300,7 +399,7 @@ export function AgentChat({ agent, onClose }: { agent: Agent; onClose: () => voi
                 <Icon name={d.where === "Cloud" ? "cloud" : "monitor"} size={18} stroke={1.9} style={{ color: d.where === "Cloud" ? "var(--cyan)" : "var(--purple)", flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="mono clip" style={{ fontSize: 13.5, fontWeight: 620 }}>{d.name}</div>
-                  <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 1 }}>{d.where}{id === defaultModel ? " · agent default" : ""}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--text-faint)", marginTop: 1 }}>{d.where}{id === appDefault ? " · default for app chats" : id === defaultModel ? " · agent default" : ""}</div>
                 </div>
                 {on && <Pill tone="ok">Selected</Pill>}
               </button>

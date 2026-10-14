@@ -76,7 +76,9 @@ Requests that arrive through Cloudflare Tunnel (identified by Cloudflare's `cf-c
 | `/api/mcp` | GET | Claude MCP install status and config |
 | `/api/devices` | GET | Device whitelist |
 | `/api/exec` | POST | `{ command }` → runs in a login shell; working directory persists |
-| `/api/agent/chat` | POST | `{ agentId, message, sessionKey? }` → `openclaw agent` |
+| `/api/agent/chat` | POST | `{ agentId, message, sessionKey?, model?, async? }` → `openclaw agent`. With `async: true` it returns a job at once; each job is a detached process with its state in `~/.jarvis/chat-jobs`, so replies survive Jarvis restarts |
+| `/api/agent/chat/jobs/<id>` | GET | A chat job's status and reply (`POST …/stop` stops it) |
+| `/api/agent/chat/history` | GET | `?agentId=` → the app's chats from OpenClaw's transcripts (shared across devices); add `&chat=jarvisapp-…` for one chat's messages |
 | `/api/agent/run` | POST | `{ prompt, agentId? }` → one `openclaw agent` turn (default agent when `agentId` is omitted); waits for the reply |
 | `/api/digest` | GET / POST | GET: the latest daily digest (`digests/latest.md`) and any on-demand run. POST: regenerate now via `scripts/daily-digest.py` (~1 min) |
 | `/api/mcp/install-desktop` | POST | Adds Jarvis to Claude Desktop's config (keeps a `.bak`) |
