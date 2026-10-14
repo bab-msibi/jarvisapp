@@ -3,15 +3,11 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import type { ScreenProps } from "@/lib/nav";
 import { useMarket } from "@/lib/queries";
+import { INITIAL_BALANCE, loadPortfolio, savePortfolio, valuePortfolio, type Market, type Portfolio, type Side } from "@/lib/paper-portfolio";
 import type { MarketResponse, MarketSeries } from "@/lib/types";
 
-type Market = "dax" | "nasdaq";
-type Side = "BUY" | "SELL";
 type SignalName = "BUY" | "SELL" | "HOLD" | "NEUTRAL";
 interface Signals { signal: SignalName; rsi: number | null; ma20: number | null; ma50: number | null }
-interface Position { market: Market; name: string; qty: number; avgPrice: number }
-interface Trade { side: Side; market: Market; name: string; qty: number; price: number; cost: number; ts: number }
-interface Portfolio { balance: number; positions: Position[]; trades: Trade[] }
 interface Alert { id: number; market: Market; name: string; direction: "above" | "below"; price: number; triggered: boolean }
 
 // ── Signal math ──────────────────────────────────────────────────────────────
@@ -55,15 +51,7 @@ function getSignals(prices: number[]): Signals {
 }
 
 // ── Paper portfolio helpers ───────────────────────────────────────────────────
-const PORTFOLIO_KEY = "ac_trading_portfolio";
 const ALERTS_KEY = "ac_trading_alerts";
-const INITIAL_BALANCE = 100000;
-
-function loadPortfolio(): Portfolio {
-  try { return JSON.parse(localStorage.getItem(PORTFOLIO_KEY) || "null") || { balance: INITIAL_BALANCE, positions: [], trades: [] }; }
-  catch { return { balance: INITIAL_BALANCE, positions: [], trades: [] }; }
-}
-function savePortfolio(p: Portfolio) { try { localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(p)); } catch {} }
 function loadAlerts(): Alert[] { try { return JSON.parse(localStorage.getItem(ALERTS_KEY) || "null") || []; } catch { return []; } }
 function saveAlerts(a: Alert[]) { try { localStorage.setItem(ALERTS_KEY, JSON.stringify(a)); } catch {} }
 
@@ -314,16 +302,7 @@ export function Trading(_: ScreenProps) {
   };
 
   // Portfolio value
-  const positionsWithPnl = portfolio.positions.map(pos => {
-    const cur = marketData?.[pos.market]?.current;
-    const value = cur != null ? pos.qty * cur : null;
-    const pnl = value != null ? value - pos.qty * pos.avgPrice : null;
-    const pnlPct = pnl != null ? (pnl / (pos.qty * pos.avgPrice)) * 100 : null;
-    return { ...pos, current: cur, value, pnl, pnlPct };
-  });
-  const totalPositionValue = positionsWithPnl.reduce((s, p) => s + (p.value || 0), 0);
-  const netWorth = portfolio.balance + totalPositionValue;
-  const totalReturn = ((netWorth - INITIAL_BALANCE) / INITIAL_BALANCE) * 100;
+  const { positions: positionsWithPnl, positionValue: totalPositionValue, netWorth, totalReturn } = valuePortfolio(portfolio, marketData);
 
   const tabStyle = (id: typeof activeTab): CSSProperties => ({
     flex: 1, padding: "8px 0", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 680, fontSize: 12.5,

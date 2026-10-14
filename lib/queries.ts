@@ -3,7 +3,7 @@
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { apiGet, apiPost, relTime } from "./api";
 import type {
-  Agent, CronJob, DeviceView, ExecResult, FilesResponse, GatewayHealth, MarketResponse, McpStatus, Model, ModelConfig,
+  Agent, CronJob, DeviceView, DigestResponse, ExecResult, FilesResponse, GatewayHealth, MarketResponse, McpStatus, Model, ModelConfig,
   OpenClawStatus, RawAgent, RawModel, RawTask, Session, SystemStats, Task, TunnelStatus, Whoami,
 } from "./types";
 
@@ -148,6 +148,21 @@ export function useFiles(q: string, folder: string, type: string, sort: string, 
 }
 
 export const useRevealFile = () => useMutation({ mutationFn: (id: string) => apiPost<{ ok: true }>("/api/files/reveal", { id }) });
+
+export function useDigest() {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: ["digest"],
+    queryFn: () => apiGet<DigestResponse>("/api/digest"),
+    // Poll while a regeneration is running
+    refetchInterval: (q) => (q.state.data?.run && !q.state.data.run.finishedAt ? 4000 : 300000),
+  });
+  const regenerate = useMutation({
+    mutationFn: () => apiPost<{ run: DigestResponse["run"] }>("/api/digest"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["digest"] }),
+  });
+  return { ...query, regenerate };
+}
 
 export const useMarket = () =>
   useQuery({ queryKey: ["market"], queryFn: () => apiGet<MarketResponse>("/api/market"), refetchInterval: 60000 });

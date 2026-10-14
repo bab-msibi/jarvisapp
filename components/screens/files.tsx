@@ -242,7 +242,7 @@ function uploadFile(folder: string, file: File, onProgress: (p: number) => void)
   });
 }
 
-function UploadSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function UploadSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
   const [folder, setFolder] = useState("Workspace");

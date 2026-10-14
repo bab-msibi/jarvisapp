@@ -8,7 +8,7 @@ natural-language summary, but the digest is written even if the model is busy.
 Scheduled by ai.jarvis.dailydigest.plist. Safe to run manually:
     python3 scripts/daily-digest.py
 """
-import json, os, sys, urllib.request, datetime
+import json, os, sys, time, urllib.request, datetime
 
 APP = os.environ.get("JARVIS_URL", "http://127.0.0.1:3000")
 OLLAMA = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
@@ -16,7 +16,17 @@ MODEL = os.environ.get("JARVIS_MODEL", "qwen2.5:3b")
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "digests")
 
 
-def get(path, timeout=15):
+def wait_for_server(limit_s=300):
+    """launchd may run us on wake, before the Jarvis service is up; give it a few minutes."""
+    deadline = time.time() + limit_s
+    while time.time() < deadline:
+        if "_error" not in get("/api/health", timeout=5):
+            return True
+        time.sleep(10)
+    return False
+
+
+def get(path, timeout=60):
     try:
         with urllib.request.urlopen(f"{APP}{path}", timeout=timeout) as r:
             return json.load(r)
@@ -45,7 +55,13 @@ def llm_summary(facts, timeout=120):
 
 def main():
     now = datetime.datetime.now()
+    if not wait_for_server():
+        print(f"{now:%Y-%m-%d %H:%M} Jarvis server at {APP} not reachable; no digest written", file=sys.stderr)
+        return 1
     sysd = get("/api/system")
+    if "_error" in sysd:
+        print(f"{now:%Y-%m-%d %H:%M} /api/system failed ({sysd['_error']}); no digest written", file=sys.stderr)
+        return 1
     tasks = get("/api/tasks")
     sessions = get("/api/sessions")
     agents = get("/api/agents")

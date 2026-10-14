@@ -115,9 +115,9 @@ export async function agentChat(agentId: string, message: string, sessionKey?: s
   }
 }
 
-export function agentRun(prompt: string, agentId?: string) {
-  const args = ["agent", "--output", "json"];
-  if (agentId) args.push("--agent", agentId);
-  args.push(prompt);
-  return oc(args);
+// One-shot agent turn (MCP run_agent). `openclaw agent` needs --agent and -m; without an id, use the default agent
+export async function agentRun(prompt: string, agentId?: string) {
+  const { agents } = await listAgents();
+  const id = agentId || (agents as { id?: string; isDefault?: boolean }[]).find((a) => a.isDefault)?.id || "main";
+  return agentChat(id, prompt);
 }

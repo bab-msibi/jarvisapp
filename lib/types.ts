@@ -1,5 +1,6 @@
 // Shapes shared between the API routes and the UI. Where a route returns a
 // server function's result directly, its type is derived from that function.
+import type { latestDigest } from "@/lib/server/digest";
 import type { recentFiles } from "@/lib/server/files";
 import type { marketData } from "@/lib/server/market";
 import type { mcpStatus } from "@/lib/server/mcp";
@@ -11,6 +12,7 @@ import type { view } from "@/lib/server/devices";
 import type { appInfo, gatewayHealth, modelConfig, tunnelStatus } from "@/lib/server/insights";
 
 export type SystemStats = Awaited<ReturnType<typeof systemStats>> & { history: Sample[] };
+export type DigestResponse = Awaited<ReturnType<typeof latestDigest>>;
 export type FilesResponse = Awaited<ReturnType<typeof recentFiles>>;
 export type FileItem = FilesResponse["files"][number];
 export type MarketResponse = ReturnType<typeof marketData>;

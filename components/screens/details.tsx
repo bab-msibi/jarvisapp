@@ -3,7 +3,7 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { Field } from "@/components/screens/auth";
 import { AGENT_GRAD, Avatar, Bar, Btn, Dot, GhostBtn, Icon, Pill, Row, Section, Sheet, TopBar, type AgentColor, type IconName, type Tone } from "@/components/ui/primitives";
-import { AGENTS, COL_TONE, FILE_TONE, FILES, MODELS, TASK_COLS, TASKS, type MockTask, type TaskCol } from "@/lib/mock-data";
+import { COL_TONE, FILE_TONE, FILES, MODELS, TASK_COLS, TASKS, type MockTask, type TaskCol } from "@/lib/mock-data";
 import type { Nav, ScreenProps } from "@/lib/nav";
 import { useData } from "@/lib/queries";
 import type { Model } from "@/lib/types";
@@ -226,21 +226,3 @@ export function Upload({ nav }: ScreenProps) {
   );
 }
 
-export function CreateTask({ nav }: ScreenProps) {
-  return (
-    <GenericDetail nav={nav} title="New Task">
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 6 }}>
-        <Field label="TASK TITLE" placeholder="What needs to get done?" value="" onChange={() => {}} />
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 620, color: "var(--text-faint)", marginBottom: 8, marginLeft: 2 }}>ASSIGN TO</div>
-          <div className="card" style={{ padding: "2px 14px" }}>{AGENTS.slice(0, 3).map((a, i) => <Row key={a.id} last={i === 2} icon={a.icon} iconColor={`var(--${a.color === "blue" ? "accent" : a.color})`} iconBg="var(--surface-2)" title={a.name} sub={a.model} right={i === 0 ? <Icon name="check" size={18} style={{ color: "var(--accent)" }} /> : null} />)}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 620, color: "var(--text-faint)", marginBottom: 8, marginLeft: 2 }}>PRIORITY</div>
-          <div style={{ display: "flex", gap: 9 }}>{["Low", "Normal", "High"].map((p, i) => <button key={p} className="tap card" style={{ flex: 1, padding: "11px", fontSize: 13, fontWeight: 600, color: i === 2 ? "var(--err)" : "var(--text-dim)", border: i === 2 ? "1px solid var(--err)" : "1px solid var(--border)" }}>{p}</button>)}</div>
-        </div>
-      </div>
-      <div style={{ padding: "24px 0 0" }}><Btn full size="lg" icon="plus" onClick={nav.pop}>Create Task</Btn></div>
-    </GenericDetail>
-  );
-}
