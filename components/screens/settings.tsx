@@ -2,13 +2,13 @@
 
 import { ConnectionBadge, OfflineBanner } from "@/components/ui/connection";
 import { Avatar, Btn, Header, Icon, Pill, Row, Section, type IconName } from "@/components/ui/primitives";
-import type { PushTarget, ScreenProps } from "@/lib/nav";
+import type { OverlayScreen, ScreenProps } from "@/lib/nav";
 import { useNotifications } from "@/lib/notifications";
 import { useData, useGateway, useModelConfig, useWhoami } from "@/lib/queries";
 
 export type Theme = "light" | "dark";
 
-interface SettingsRow { icon: IconName; color: string; title: string; sub: string; to?: PushTarget }
+interface SettingsRow { icon: IconName; color: string; title: string; sub: string; to: OverlayScreen }
 
 export function Settings({ nav, theme, setTheme }: ScreenProps & { theme: Theme; setTheme: (t: Theme) => void }) {
   const { data: me } = useWhoami();
@@ -35,17 +35,9 @@ export function Settings({ nav, theme, setTheme }: ScreenProps & { theme: Theme;
       { icon: "flow", color: "var(--accent)", title: "OpenClaw Integration", sub: openclawSub, to: "openclaw" },
       { icon: "spark", color: "var(--warn)", title: "Claude MCP", sub: "Connect Claude Desktop & Claude Code", to: "mcp" },
       { icon: "lock", color: "var(--ok)", title: "Devices", sub: "Whitelist for remote access", to: "devices" },
-      { icon: "key", color: "var(--warn)", title: "API Keys", sub: "4 keys · 1 expiring soon" },
-      { icon: "network", color: "var(--cyan)", title: "Local Network", sub: "Remote access enabled" },
-    ]},
-    { header: "Mac Connection", rows: [
-      { icon: "monitor", color: "var(--accent)", title: "Pair New Mac", sub: "Run setup wizard", to: "onboarding" },
-      { icon: "link", color: "var(--ok)", title: "Test Connection", sub: "Last checked 2m ago" },
     ]},
     { header: "Agents", rows: [
       { icon: "brain", color: "var(--purple)", title: "Default Model", sub: defaultModel ?? "…", to: "defaultModel" },
-      { icon: "ram", color: "var(--cyan)", title: "Memory Limits", sub: "Per-agent: 8 GB" },
-      { icon: "sliders", color: "var(--accent)", title: "Permissions", sub: "Tools, file access, network" },
     ]},
     { header: "Insights", rows: [
       { icon: "chart", color: "var(--accent)", title: "Analytics", sub: "Tokens, sessions & task outcomes", to: "analytics" },
@@ -82,13 +74,16 @@ export function Settings({ nav, theme, setTheme }: ScreenProps & { theme: Theme;
             <div className="card" style={{ padding: "2px 14px" }}>
               {g.rows.map((r, i) => (
                 <Row key={r.title} last={i === g.rows.length - 1} chev icon={r.icon} iconColor={r.color} iconBg="var(--surface-2)"
-                  title={r.title} sub={r.sub} onClick={() => r.to && nav.push(r.to)} />
+                  title={r.title} sub={r.sub} onClick={() => nav.push(r.to)} />
               ))}
             </div>
           </div>
         ))}
         </div>
-        <Btn full variant="danger" icon="power" onClick={() => nav.replace("login")} style={{ marginTop: 4 }}>Sign out</Btn>
+        {/* Remote sessions are Cloudflare Access logins; on this Mac there's nothing to sign out of */}
+        {me?.remote && (
+          <Btn full variant="danger" icon="power" onClick={() => { location.href = "/cdn-cgi/access/logout"; }} style={{ marginTop: 4 }}>Sign out</Btn>
+        )}
         <p style={{ textAlign: "center", fontSize: 11.5, color: "var(--text-ghost)", marginTop: 16 }}>Jarvis {me?.appVersion ?? "…"} · OpenClaw {status?.runtimeVersion ?? "…"}</p>
       </div>
     </div>

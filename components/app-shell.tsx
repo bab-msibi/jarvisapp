@@ -3,19 +3,16 @@
 import { Component, useCallback, useEffect, useRef, useState, type ComponentType, type ErrorInfo, type ReactNode } from "react";
 import { ChatReplyWatcher, ReplyToasts, type ReplyToast } from "@/components/chat-replies";
 import { AgentChatScreen, AgentDetailScreen, Agents } from "@/components/screens/agents";
-import { LoginScreen, OnboardingScreen } from "@/components/screens/auth";
 import { Dashboard } from "@/components/screens/dashboard";
 import { Analytics } from "@/components/screens/analytics";
 import { DefaultModel } from "@/components/screens/default-model";
 import { CreateTask } from "@/components/screens/create-task";
-import { CreateAgent, FileDetail, Models, MultiAgent, Upload } from "@/components/screens/details";
 import { TaskDetail } from "@/components/screens/task-detail";
 import { Notifications } from "@/components/screens/notifications";
 import { Devices } from "@/components/screens/devices";
 import { OpenClaw } from "@/components/screens/openclaw";
 import { Profile } from "@/components/screens/profile";
 import { Security } from "@/components/screens/security";
-import { WorkflowBuilder } from "@/components/screens/workflow";
 import { Files } from "@/components/screens/files";
 import { Mac } from "@/components/screens/mac";
 import { ClaudeMcp } from "@/components/screens/mcp";
@@ -27,8 +24,6 @@ import { Icon, useMedia, type IconName } from "@/components/ui/primitives";
 import type { Nav, OverlayScreen, ScreenProps, TabId } from "@/lib/nav";
 import { useNotifications } from "@/lib/notifications";
 import { parsePath, toPath, type Route } from "@/lib/routes";
-
-type Mode = "login" | "onboarding" | "app";
 
 const TABS: { id: TabId; icon: IconName; label: string }[] = [
   { id: "dashboard", icon: "grid", label: "Home" },
@@ -46,10 +41,10 @@ function hexToRgb(h: string) {
 }
 
 const OVERLAYS: Record<OverlayScreen, ComponentType<ScreenProps>> = {
-    agentDetail: AgentDetailScreen, agentChat: AgentChatScreen, multiAgent: MultiAgent, terminal: Terminal, models: Models,
-    openclaw: OpenClaw, mcp: ClaudeMcp, devices: Devices, workflow: WorkflowBuilder, notifications: Notifications,
-    security: Security, analytics: Analytics, createAgent: CreateAgent, createTask: CreateTask,
-    taskDetail: TaskDetail, fileDetail: FileDetail, upload: Upload, profile: Profile, defaultModel: DefaultModel,
+    agentDetail: AgentDetailScreen, agentChat: AgentChatScreen, terminal: Terminal,
+    openclaw: OpenClaw, mcp: ClaudeMcp, devices: Devices, notifications: Notifications,
+    security: Security, analytics: Analytics, createTask: CreateTask,
+    taskDetail: TaskDetail, profile: Profile, defaultModel: DefaultModel,
 };
 
 const TAB_SCREENS: Record<Exclude<TabId, "settings">, ComponentType<ScreenProps>> = {
@@ -114,8 +109,6 @@ function BottomNav({ tab, onTab, badges }: { tab: TabId; onTab: (t: TabId) => vo
 }
 
 function App() {
-  const saved = (() => { try { return JSON.parse(localStorage.getItem("ac_nav") || "{}") as { mode?: Mode }; } catch { return {}; } })();
-  const [mode, setMode] = useState<Mode>(saved.mode || "login");
   // The URL is the source of truth for which tab and screens are open
   const [route, setRoute] = useState<Route>(() => parsePath(location.pathname));
   const { tab, stack } = route;
@@ -125,7 +118,8 @@ function App() {
   const accent = "#5b8cff";
   const isDesktop = useMedia("(min-width: 900px)");
 
-  useEffect(() => { localStorage.setItem("ac_nav", JSON.stringify({ mode })); }, [mode]);
+  // Left over from the old demo login screen
+  useEffect(() => { try { localStorage.removeItem("ac_nav"); } catch {} }, []);
 
   // Every in-app navigation is a browser history entry, so the phone's back
   // button/gesture closes one screen at a time and links reopen the same screen.
@@ -151,7 +145,7 @@ function App() {
     d.style.setProperty("--accent-rgb", hexToRgb(accent));
     document.documentElement.style.setProperty("--accent", accent);
     document.documentElement.style.setProperty("--accent-rgb", hexToRgb(accent));
-  }, [accent, mode, tab, stack]);
+  }, [accent, tab, stack]);
 
   const theme: Theme = dark ? "dark" : "light";
   const setTheme = (m: Theme) => applyDark(m === "dark");
@@ -159,7 +153,6 @@ function App() {
   const nav: Nav = {
     params: stack.length ? stack[stack.length - 1].params || {} : {},
     push: (screen, params = {}) => {
-      if (screen === "onboarding" || screen === "login") { setMode(screen); return; }
       navigate({ tab, stack: [...stack, { screen, params }] }, "push");
     },
     pop: () => {
@@ -170,13 +163,10 @@ function App() {
       else navigate({ tab, stack: stack.slice(0, -1) }, "replace");
     },
     go: (tb) => {
-      setMode("app");
       if (tb !== tab || stack.length) navigate({ tab: tb, stack: [] }, "push");
     },
-    openPath: (path) => { setMode("app"); navigate(parsePath(path), "push"); },
+    openPath: (path) => navigate(parsePath(path), "push"),
     replace: (target) => {
-      if (target === "login" || target === "onboarding") { setMode(target); return; }
-      setMode("app");
       navigate({ tab: target, stack: [] }, "replace");
     },
   };
@@ -203,13 +193,9 @@ function App() {
     <div className="device" data-theme={theme} ref={deviceRef}>
       <ChatReplyWatcher activeChatAgentId={activeChatAgentId} chatUrl={id => toPath(chatRoute(id))}
         onToast={t => setToasts(ts => [...ts.filter(x => x.agentId !== t.agentId), t])} />
-      {mode === "app" && (
-        <ReplyToasts toasts={toasts} onDismiss={dismissToast}
-          onOpen={t => { dismissToast(t.id); setMode("app"); navigate(chatRoute(t.agentId), "push"); }} />
-      )}
-      {mode === "login" && <LoginScreen nav={nav} />}
-      {mode === "onboarding" && <OnboardingScreen nav={nav} />}
-      {mode === "app" && (isDesktop ? (
+      <ReplyToasts toasts={toasts} onDismiss={dismissToast}
+        onOpen={t => { dismissToast(t.id); navigate(chatRoute(t.agentId), "push"); }} />
+      {isDesktop ? (
         <>
           <Sidebar tab={tab} onTab={nav.go} badges={badges} />
           <div style={{ flex: 1, position: "relative", minWidth: 0, overflow: "hidden" }}>
@@ -239,7 +225,7 @@ function App() {
           )}
           {!stack.length && <BottomNav tab={tab} onTab={nav.go} badges={badges} />}
         </>
-      ))}
+      )}
     </div>
   );
 }
@@ -266,10 +252,10 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
               fontSize: 14, fontWeight: 650, cursor: "pointer" }}>
             Reload
           </button>
-          <button onClick={() => { try { localStorage.removeItem("ac_nav"); } catch {} location.reload(); }}
+          <button onClick={() => { location.href = "/"; }}
             style={{ padding: "10px 22px", borderRadius: 100, border: "1px solid rgba(255,255,255,0.16)", background: "none",
               color: "rgba(235,238,250,0.62)", fontSize: 14, fontWeight: 650, cursor: "pointer" }}>
-            Reset & reload
+            Go to home
           </button>
         </div>
       </div>
