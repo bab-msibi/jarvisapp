@@ -75,7 +75,8 @@ Requests that arrive through Cloudflare Tunnel (identified by Cloudflare's `cf-c
 | `/api/devices` | GET | Device whitelist |
 | `/api/exec` | POST | `{ command }` → runs in a login shell; working directory persists |
 | `/api/agent/chat` | POST | `{ agentId, message, sessionKey? }` → `openclaw agent` |
-| `/api/agent/run` | POST | `{ prompt, agentId? }` → `openclaw agent` |
+| `/api/agent/run` | POST | `{ prompt, agentId? }` → one `openclaw agent` turn (default agent when `agentId` is omitted); waits for the reply |
+| `/api/digest` | GET / POST | GET: the latest daily digest (`digests/latest.md`) and any on-demand run. POST: regenerate now via `scripts/daily-digest.py` (~1 min) |
 | `/api/mcp/install-desktop` | POST | Adds Jarvis to Claude Desktop's config (keeps a `.bak`) |
 | `/api/devices/{request,approve,rename,remove}` | POST | Device pairing and whitelist management |
 

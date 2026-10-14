@@ -1,11 +1,14 @@
 "use client";
 
+import { useEffect, useState, type ReactNode } from "react";
+import { UploadSheet } from "@/components/screens/files";
 import { ConnectionBadge, OfflineBanner } from "@/components/ui/connection";
-import { Dot, GhostBtn, Header, Icon, MiniBars, Ring, Section, type IconName, type Tone } from "@/components/ui/primitives";
+import { Btn, Dot, GhostBtn, Header, Icon, MiniBars, Ring, Section, Sheet, type IconName, type Tone } from "@/components/ui/primitives";
 import { relTime } from "@/lib/api";
 import type { Nav, ScreenProps } from "@/lib/nav";
 import { useNotifications } from "@/lib/notifications";
-import { useData, useGateway, useModelConfig, useTunnel } from "@/lib/queries";
+import { loadPortfolio, valuePortfolio, type Portfolio } from "@/lib/paper-portfolio";
+import { useData, useDigest, useGateway, useMarket, useModelConfig, useTunnel } from "@/lib/queries";
 import type { CronJob, Session, SystemStats } from "@/lib/types";
 
 const TONE_COLOR: Record<string, string> = { info: "var(--accent)", ok: "var(--ok)", purple: "var(--purple)", cyan: "var(--cyan)", warn: "var(--warn)", err: "var(--err)", neutral: "var(--text-faint)" };
@@ -155,6 +158,93 @@ function UpNext({ crons, nav }: { crons: CronJob[]; nav: Nav }) {
   );
 }
 
+// Just enough markdown for the digest: headings, bullets, quotes, **bold**, _italic_
+function inline(text: string): ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*|_[^_]+_)/g).map((part, i) =>
+    part.startsWith("**") ? <strong key={i} style={{ color: "var(--text)" }}>{part.slice(2, -2)}</strong>
+    : part.startsWith("_") && part.endsWith("_") && part.length > 2 ? <em key={i}>{part.slice(1, -1)}</em>
+    : part);
+}
+
+function DigestMarkdown({ md }: { md: string }) {
+  return (
+    <div style={{ fontSize: 13.5, lineHeight: 1.55, color: "var(--text-dim)" }}>
+      {md.split("\n").map((line, i) => {
+        if (line.startsWith("# ")) return null;
+        if (line.startsWith("### ")) return <div key={i} style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", margin: "12px 0 4px" }}>{inline(line.slice(4))}</div>;
+        if (line.startsWith("## ")) return <div key={i} style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.5, color: "var(--text-ghost)", margin: "16px 0 6px" }}>{line.slice(3).toUpperCase()}</div>;
+        if (line.startsWith("> ")) return <div key={i} style={{ borderLeft: "3px solid var(--accent)", padding: "2px 0 2px 10px", margin: "8px 0", color: "var(--text)" }}>{inline(line.slice(2))}</div>;
+        if (line.startsWith("- ")) return <div key={i} style={{ display: "flex", gap: 8 }}><span style={{ color: "var(--text-ghost)" }}>•</span><span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{inline(line.slice(2))}</span></div>;
+        return line.trim() ? <div key={i}>{inline(line)}</div> : null;
+      })}
+    </div>
+  );
+}
+
+function DigestCard() {
+  const { data, regenerate } = useDigest();
+  const [open, setOpen] = useState(false);
+  const d = data?.digest;
+  const running = !!data?.run && !data.run.finishedAt;
+  const failed = data?.run?.finishedAt && data.run.ok === false;
+  const today = d && new Date(d.generatedAt).toDateString() === new Date().toDateString();
+  const body = running ? "Writing a fresh digest… (about a minute)"
+    : d?.broken ? "The last digest ran while Jarvis was offline, so it has no data."
+    : d?.summary || (d ? "No summary in this digest." : "No digest yet. The first one is written at 08:00.");
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <Section title="Daily Digest" action={d ? "Read" : undefined} onAction={() => setOpen(true)} />
+      <div className="card tap" onClick={() => d && setOpen(true)} style={{ padding: 14, cursor: d ? "pointer" : "default" }}>
+        <div className="between" style={{ marginBottom: 6, gap: 10 }}>
+          <span className="clip" style={{ fontSize: 12, fontWeight: 650, color: "var(--text-faint)" }}>{d ? (today ? "Today" : d.title) : "—"}</span>
+          {d && <span style={{ fontSize: 11.5, color: "var(--text-ghost)", flexShrink: 0 }}>{relTime(d.generatedAt)}</span>}
+        </div>
+        <div style={{ fontSize: 13.5, lineHeight: 1.45, color: !running && (d?.broken || failed) ? "var(--warn)" : "var(--text-dim)" }}>
+          {failed ? "The last regeneration failed; see scripts/daily-digest.log." : body}
+        </div>
+        {(!today || d?.broken || failed) && !running && (
+          <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
+            <Btn size="sm" variant="glass" icon="refresh" disabled={regenerate.isPending} onClick={() => regenerate.mutate()}>Generate now</Btn>
+          </div>
+        )}
+      </div>
+      <Sheet open={open && !!d} onClose={() => setOpen(false)} title={d?.title}>
+        {d && <DigestMarkdown md={d.markdown} />}
+      </Sheet>
+    </div>
+  );
+}
+
+// Paper portfolio from this browser's Trade tab, valued at the (simulated) market prices
+function PaperTile({ nav }: { nav: Nav }) {
+  const { data: market } = useMarket();
+  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
+  useEffect(() => { setPortfolio(loadPortfolio()); }, []);
+  if (!portfolio) return null;
+  const { netWorth, totalReturn, positions } = valuePortfolio(portfolio, market);
+  const up = totalReturn >= 0;
+  const color = !market ? "var(--text-faint)" : up ? "var(--ok)" : "var(--err)";
+  return (
+    <div className="pad" style={{ marginBottom: 16 }}>
+      <button className="tap card" onClick={() => nav.go("trading")} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, width: "100%", textAlign: "left" }}>
+        <div style={{ width: 36, height: 36, borderRadius: 10, background: `color-mix(in oklab, ${color} 15%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", color, flexShrink: 0 }}>
+          <Icon name="chart" size={18} stroke={2} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 650 }}>Paper portfolio</div>
+          <div className="clip" style={{ fontSize: 11.5, color: "var(--text-ghost)", marginTop: 1 }}>
+            {positions.length ? `${positions.length} position${positions.length === 1 ? "" : "s"}` : "No open positions"} · simulated prices
+          </div>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div className="mono" style={{ fontSize: 14, fontWeight: 700 }}>${netWorth.toLocaleString("en", { maximumFractionDigits: 0 })}</div>
+          <div className="mono" style={{ fontSize: 11.5, fontWeight: 650, color }}>{market ? `${up ? "+" : ""}${totalReturn.toFixed(2)}%` : "–"}</div>
+        </div>
+      </button>
+    </div>
+  );
+}
+
 const SESSION_KIND: Record<string, string> = { direct: "Direct chat", cron: "Cron job", group: "Discord group", "spawn-child": "Sub-agent" };
 
 // "agent:main:jarvisapp-mv6o9dfm" → "Jarvis app"; "agent:main:main" → "Main"
@@ -171,6 +261,7 @@ export function Dashboard({ nav }: ScreenProps) {
   const d = useData();
   const { sys, agents, tasks, models, sessions, crons, ready } = d;
   const { unseen } = useNotifications();
+  const [uploading, setUploading] = useState(false);
 
   const runningAgents = agents.filter(a => a.status === "running").length;
   const runningTasks = tasks.filter(t => t.col === "In Progress").length;
@@ -197,8 +288,8 @@ export function Dashboard({ nav }: ScreenProps) {
 
   const quicks: { icon: IconName; label: string; tone: Tone; go: () => void }[] = [
     { icon: "plus", label: "Create Agent", tone: "info", go: () => nav.push("createAgent") },
-    { icon: "columns", label: "New Task", tone: "purple", go: () => nav.go("tasks") },
-    { icon: "upload", label: "Upload File", tone: "cyan", go: () => nav.go("files") },
+    { icon: "columns", label: "New Task", tone: "purple", go: () => nav.push("createTask") },
+    { icon: "upload", label: "Upload File", tone: "cyan", go: () => setUploading(true) },
     { icon: "play", label: "Launch Agent", tone: "ok", go: () => nav.go("agents") },
     { icon: "monitor", label: "Mac Control", tone: "warn", go: () => nav.go("mac") },
   ];
@@ -298,10 +389,12 @@ export function Dashboard({ nav }: ScreenProps) {
         <StatTile icon="brain" label="Models" value={ready.models ? activeModels : "–"} tone="cyan"
           sub={ready.models && defaultModel ? `default ${defaultModel}` : undefined} />
       </div>
+      <PaperTile nav={nav} />
       </div>{/* end left column */}
 
       <div className="dash-col">
       <div className="pad">
+        <DigestCard />
         <UpNext crons={crons} nav={nav} />
 
         {/* Activity feed — tasks and cron runs */}
@@ -367,6 +460,7 @@ export function Dashboard({ nav }: ScreenProps) {
       </div>
       </div>{/* end right column */}
       </div>{/* end dash-grid */}
+      <UploadSheet open={uploading} onClose={() => setUploading(false)} />
     </div>
   );
 }
