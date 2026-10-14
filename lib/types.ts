@@ -52,8 +52,10 @@ export interface CronJob {
   payload?: { kind?: string; message?: string; model?: string };
 }
 export interface RawTask {
-  taskId: string; status: string; label?: string; task?: string; agentId?: string; endedAt?: number; error?: string;
-  createdAt?: number; lastEventAt?: number;
+  taskId: string; status: string; label?: string; task?: string; agentId?: string; error?: string;
+  runtime?: string; taskKind?: string; sourceId?: string; requesterSessionKey?: string; runId?: string;
+  createdAt?: number; startedAt?: number; endedAt?: number; lastEventAt?: number;
+  deliveryStatus?: string; progressSummary?: string; terminalSummary?: string;
 }
 
 // UI-side shapes (adapted from the raw data)
@@ -64,9 +66,22 @@ export interface Agent {
   sessionCount: number; cronCount: number; bindings: number; isDefault: boolean; workspace?: string;
   crons: CronJob[]; sessions: Session[];
 }
+export type TaskStatus = "running" | "queued" | "succeeded" | "failed" | "cancelled";
+/** What started a task: a cron run, the New Task screen, an app chat, or another session */
+export type TaskOrigin =
+  | { type: "cron"; jobId: string; runId?: string }
+  | { type: "task" | "chat" | "session"; sessionKey: string };
 export interface Task {
-  id: string; title: string; agent: string; color: string; priority: string; due: string;
-  col: string; prog?: number; block?: string; ts?: number;
+  id: string;
+  /** Short heading: OpenClaw's label ("Image generation") or the prompt itself */
+  title: string;
+  /** The full request, without the CLI's "[Tue 2026-…]" stamp */
+  prompt: string;
+  agent: string; status: TaskStatus; rawStatus: string;
+  kind: string; runtime: string;
+  ts?: number; createdAt?: number; startedAt?: number; endedAt?: number;
+  error?: string; result?: string; deliveryStatus?: string;
+  origin: TaskOrigin | null;
 }
 export interface Model {
   id: string; name: string; family: string; size: string; status: "active" | "loaded" | "available";

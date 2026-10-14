@@ -3,7 +3,7 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { Field } from "@/components/screens/auth";
 import { AGENT_GRAD, Avatar, Bar, Btn, Dot, GhostBtn, Icon, Pill, Row, Section, Sheet, TopBar, type AgentColor, type IconName, type Tone } from "@/components/ui/primitives";
-import { COL_TONE, FILE_TONE, FILES, MODELS, TASK_COLS, TASKS, type MockTask, type TaskCol } from "@/lib/mock-data";
+import { FILE_TONE, FILES, MODELS } from "@/lib/mock-data";
 import type { Nav, ScreenProps } from "@/lib/nav";
 import { useData } from "@/lib/queries";
 import type { Model } from "@/lib/types";
@@ -160,31 +160,6 @@ function GenericDetail({ nav, title, children }: { nav: Nav; title: string; chil
       <TopBar onBack={nav.pop} title={title} />
       <div className="pad">{children}</div>
     </div>
-  );
-}
-
-export function TaskDetail({ nav }: ScreenProps) {
-  let t: MockTask = TASKS["In Progress"][0];
-  let col: TaskCol = "In Progress";
-  for (const c of TASK_COLS) { const f = TASKS[c].find(x => x.id === nav.params.id); if (f) { t = f; col = c; } }
-  return (
-    <GenericDetail nav={nav} title="Task">
-      <Pill tone={COL_TONE[col]} style={{ marginBottom: 12 }}>{col}</Pill>
-      <h1 style={{ margin: "0 0 16px", fontSize: 24, fontWeight: 760, letterSpacing: -0.6, lineHeight: 1.15 }}>{t.title}</h1>
-      {t.prog !== undefined && <div style={{ marginBottom: 18 }}><div className="between" style={{ marginBottom: 7 }}><span style={{ fontSize: 13, color: "var(--text-dim)" }}>Progress</span><span className="mono" style={{ fontSize: 13, fontWeight: 600 }}>{t.prog}%</span></div><Bar value={t.prog} h={8} /></div>}
-      <div className="card" style={{ padding: "4px 14px", marginBottom: 16 }}>
-        {[["Assigned agent", t.agent], ["Priority", t.priority], ["Due date", t.due], ["Status", col]].map(([k, v], i) => (
-          <div key={k} className="between" style={{ padding: "12px 0", borderBottom: i < 3 ? "1px solid var(--border)" : "none" }}><span style={{ fontSize: 13.5, color: "var(--text-dim)" }}>{k}</span><span style={{ fontSize: 13.5, fontWeight: 580 }}>{v}</span></div>
-        ))}
-      </div>
-      <Section title="Activity log" />
-      <div className="card" style={{ padding: 14 }}>
-        {["Task created and assigned", "Agent began execution", "Checkpoint: 2 of 3 subtasks done"].map((l, i) => (
-          <div key={i} style={{ display: "flex", gap: 10, padding: "8px 0" }}><div style={{ width: 8, height: 8, borderRadius: 4, background: "var(--accent)", marginTop: 5 }} /><div><div style={{ fontSize: 13, color: "var(--text-dim)" }}>{l}</div><span className="mono" style={{ fontSize: 11, color: "var(--text-ghost)" }}>10:3{i} AM</span></div></div>
-        ))}
-      </div>
-      <div style={{ display: "flex", gap: 10, marginTop: 18 }}><Btn full variant="glass" icon="message" onClick={() => nav.go("agents")}>Open agents</Btn><Btn full icon="check" onClick={nav.pop}>Mark done</Btn></div>
-    </GenericDetail>
   );
 }
 

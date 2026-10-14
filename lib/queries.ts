@@ -5,7 +5,7 @@ import { apiGet, apiPost, relTime } from "./api";
 import type { CronRun } from "@/lib/server/cron";
 import type {
   Agent, CronJob, DeviceView, DigestResponse, ExecResult, FilesResponse, GatewayHealth, MarketResponse, McpStatus, Model, ModelConfig,
-  OpenClawStatus, RawAgent, RawModel, RawTask, Session, SystemStats, Task, TunnelStatus, Whoami,
+  OpenClawStatus, RawAgent, RawModel, RawTask, Session, SystemStats, Task, TaskOrigin, TaskStatus, TunnelStatus, Whoami,
 } from "./types";
 
 // ── Adapters: raw OpenClaw JSON → UI shapes ─────────────────────────────────
@@ -44,28 +44,49 @@ function adaptAgent(a: RawAgent, sessions: Session[], crons: CronJob[], busy: st
   };
 }
 
-const TASK_COL: Record<string, string> = { running: "In Progress", queued: "Pending", succeeded: "Completed", failed: "Completed", cancelled: "Waiting", timed_out: "Completed", lost: "Completed" };
-const TASK_PRIO: Record<string, string> = { failed: "High", timed_out: "High", running: "High", queued: "Normal", succeeded: "Low", cancelled: "Low" };
+const TASK_STATUS: Record<string, TaskStatus> = {
+  running: "running", queued: "queued", succeeded: "succeeded",
+  failed: "failed", timed_out: "failed", lost: "failed", cancelled: "cancelled",
+};
+const TASK_KIND: Record<string, string> = { image_generation: "Image generation" };
+const RUNTIME_KIND: Record<string, string> = { cli: "Agent turn", cron: "Cron run", subagent: "Sub-agent", acp: "Coding agent" };
 
 // CLI tasks carry a "[Tue 2026-10-13 14:44 GMT+2] " stamp; the time is shown separately
+const stripStamp = (text?: string) => text?.replace(/^\[[^\]]*\d{4}-\d{2}-\d{2}[^\]]*\]\s*/, "") ?? "";
 function cleanTaskTitle(t: RawTask) {
-  return t.label || t.task?.replace(/^\[[^\]]*\d{4}-\d{2}-\d{2}[^\]]*\]\s*/, "") || t.taskId;
+  return t.label || stripStamp(t.task) || t.taskId;
+}
+
+// "agent:main:cron:<job>:run:<run>" / "agent:main:task-…" / "agent:main:jarvisapp-…"
+function taskOrigin(key?: string): TaskOrigin | null {
+  if (!key) return null;
+  const parts = key.split(":");
+  const cron = parts.indexOf("cron");
+  if (cron >= 0 && parts[cron + 1]) return { type: "cron", jobId: parts[cron + 1], runId: parts[parts.indexOf("run") + 1] || undefined };
+  const tail = parts.slice(2).join(":");
+  if (tail.startsWith("task-")) return { type: "task", sessionKey: key };
+  if (tail.startsWith("jarvisapp")) return { type: "chat", sessionKey: key };
+  return { type: "session", sessionKey: key };
 }
 
 function adaptTask(t: RawTask): Task {
-  const due = t.endedAt ? new Date(t.endedAt).toLocaleDateString("en", { month: "short", day: "numeric" })
-    : t.status === "running" ? "Running" : "Queued";
+  const num = (v?: number | string) => (v == null || v === "" ? undefined : Number(v));
+  const prompt = stripStamp(t.task);
   return {
     id: t.taskId,
     title: cleanTaskTitle(t),
+    prompt,
     agent: t.agentId || "Agent",
-    color: t.status === "failed" ? "amber" : "blue",
-    priority: TASK_PRIO[t.status] || "Normal",
-    due,
-    col: TASK_COL[t.status] || "Pending",
-    ...(t.status === "running" || t.status === "succeeded" ? { prog: t.status === "succeeded" ? 100 : 50 } : {}),
-    ...(t.error ? { block: t.error } : {}),
-    ts: t.lastEventAt || t.endedAt || t.createdAt,
+    status: TASK_STATUS[t.status] || "queued",
+    rawStatus: t.status,
+    kind: TASK_KIND[t.taskKind ?? ""] || RUNTIME_KIND[t.runtime ?? ""] || t.taskKind || t.runtime || "Task",
+    runtime: t.runtime || "",
+    ts: num(t.lastEventAt) ?? num(t.endedAt) ?? num(t.createdAt),
+    createdAt: num(t.createdAt), startedAt: num(t.startedAt), endedAt: num(t.endedAt),
+    error: t.error || (t.status === "timed_out" ? "Timed out" : t.status === "lost" ? "Lost (the process went away)" : undefined),
+    result: t.terminalSummary || t.progressSummary,
+    deliveryStatus: t.deliveryStatus,
+    origin: taskOrigin(t.requesterSessionKey),
   };
 }
 

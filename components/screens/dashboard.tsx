@@ -253,8 +253,8 @@ export function Dashboard({ nav }: ScreenProps) {
   const [uploading, setUploading] = useState(false);
 
   const runningAgents = agents.filter(a => a.status === "running").length;
-  const runningTasks = tasks.filter(t => t.col === "In Progress").length;
-  const failedTasks = tasks.filter(t => t.color === "amber").length;
+  const runningTasks = tasks.filter(t => t.status === "running").length;
+  const failedTasks = tasks.filter(t => t.status === "failed").length;
   const activeModels = models.filter(m => m.status === "active" || m.status === "loaded").length;
   const defaultModel = models.find(m => m.status === "active")?.name;
 
@@ -263,9 +263,9 @@ export function Dashboard({ nav }: ScreenProps) {
   const activityItems: Item[] = [
     ...tasks.map((t): Item => ({
       id: `t:${t.id}`, label: t.agent || "Agent", text: t.title, ts: t.ts,
-      tone: t.col === "Completed" ? "ok" : t.col === "In Progress" ? "info" : t.color === "amber" ? "err" : "neutral",
-      icon: t.col === "Completed" ? "check" : t.col === "In Progress" ? "play" : t.block ? "warn" : "clock",
-      meta: t.block || "",
+      tone: t.status === "succeeded" ? "ok" : t.status === "running" ? "info" : t.status === "failed" ? "err" : "neutral",
+      icon: t.status === "succeeded" ? "check" : t.status === "running" ? "play" : t.status === "failed" ? "warn" : "clock",
+      meta: t.error || "",
     })),
     // Cron runs are usually logged as tasks too; only add the ones that aren't
     ...crons.filter(c => c.state?.lastRunAtMs && !tasks.some(t => t.title === c.name)).map((c): Item => {
