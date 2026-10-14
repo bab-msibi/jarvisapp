@@ -50,3 +50,6 @@ export function startChatJob(agentId: string, message: string, sessionKey?: stri
 }
 
 export const getChatJob = (id: string) => jobs.get(id) ?? null;
+
+// Agents with a chat turn being generated right now
+export const busyAgents = () => [...new Set([...jobs.values()].filter((j) => j.status === "running").map((j) => j.agentId))];

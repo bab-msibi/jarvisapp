@@ -2,16 +2,11 @@
 import type { IconName, Tone } from "@/components/ui/primitives";
 import type { Model } from "@/lib/types";
 
-export type TaskCol = "Pending" | "In Progress" | "Waiting" | "Review" | "Completed";
-
 export interface MockAgent {
   id: string; name: string; color: string; icon: IconName; status: string; task: string;
   model: string; cpu: number; mem: number; last: string; priority: string;
 }
 export interface Activity { id: number; agent: string; color: string; icon: IconName; tone: Tone; text: string; time: string; meta: string }
-export interface MockTask {
-  id: string; title: string; agent: string; color: string; priority: string; due: string; prog?: number; block?: string;
-}
 export interface MockFile { id: string; name: string; type: string; size: string; agent: string; color: string; time: string; ai: boolean }
 
 export const AGENTS: MockAgent[] = [
@@ -35,29 +30,6 @@ export const ACTIVITY: Activity[] = [
   { id: 6, agent: "Finance Agent", color: "green", icon: "pause", tone: "warn", text: "Paused by user — awaiting approval", time: "1h", meta: "" },
 ];
 
-export const TASKS: Record<TaskCol, MockTask[]> = {
-  Pending: [
-    { id: "t1", title: "Draft Q3 content calendar", agent: "Marketing Agent", color: "pink", priority: "Normal", due: "Jun 12" },
-    { id: "t2", title: "Audit dependency vulnerabilities", agent: "Coding Agent", color: "purple", priority: "High", due: "Jun 11" },
-  ],
-  "In Progress": [
-    { id: "t3", title: "Compile wearables market analysis", agent: "Research Agent", color: "blue", priority: "High", due: "Today", prog: 68 },
-    { id: "t4", title: "Refactor authentication module", agent: "Coding Agent", color: "purple", priority: "High", due: "Today", prog: 82 },
-    { id: "t5", title: "Triage support backlog", agent: "Support Agent", color: "cyan", priority: "Normal", due: "Today", prog: 40 },
-  ],
-  Waiting: [
-    { id: "t6", title: "Deploy staging build", agent: "Automation Agent", color: "amber", priority: "High", due: "Blocked", block: "Awaiting QA sign-off" },
-  ],
-  Review: [
-    { id: "t7", title: "Q2 burn-rate reconciliation", agent: "Finance Agent", color: "green", priority: "Normal", due: "Jun 10" },
-  ],
-  Completed: [
-    { id: "t8", title: "Onboard new CRM integration", agent: "Automation Agent", color: "amber", priority: "Normal", due: "Jun 9" },
-    { id: "t9", title: "Generate brand style guide", agent: "Design Agent", color: "slate", priority: "Low", due: "Jun 8" },
-  ],
-};
-export const TASK_COLS: TaskCol[] = ["Pending", "In Progress", "Waiting", "Review", "Completed"];
-export const COL_TONE: Record<TaskCol, Tone> = { Pending: "neutral", "In Progress": "info", Waiting: "warn", Review: "purple", Completed: "ok" };
 
 export const FILES: MockFile[] = [
   { id: "f1", name: "market-analysis-q2.pdf", type: "pdf", size: "2.4 MB", agent: "Research Agent", color: "blue", time: "6m ago", ai: true },

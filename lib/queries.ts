@@ -2,35 +2,34 @@
 
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { apiGet, apiPost, relTime } from "./api";
+import type { CronRun } from "@/lib/server/cron";
 import type {
   Agent, CronJob, DeviceView, DigestResponse, ExecResult, FilesResponse, GatewayHealth, MarketResponse, McpStatus, Model, ModelConfig,
-  OpenClawStatus, RawAgent, RawModel, RawTask, Session, SystemStats, Task, TunnelStatus, Whoami,
+  OpenClawStatus, RawAgent, RawModel, RawTask, Session, SystemStats, Task, TaskOrigin, TaskStatus, TunnelStatus, Whoami,
 } from "./types";
 
 // ── Adapters: raw OpenClaw JSON → UI shapes ─────────────────────────────────
 
 const AGENT_COLORS = ["blue", "purple", "cyan", "green", "amber", "pink", "slate"];
 
-function adaptAgent(a: RawAgent, sessions: Session[], crons: CronJob[]): Agent {
+// Running = a chat reply in progress, an OpenClaw task running, or a cron job mid-run (all live signals)
+function adaptAgent(a: RawAgent, sessions: Session[], crons: CronJob[], busy: string[], tasks: RawTask[]): Agent {
   const h = (a.id || "").split("").reduce((s, c) => s + c.charCodeAt(0), 0);
   const agentSessions = sessions.filter((s) => s.agentId === a.id).sort((x, y) => (y.updatedAt || 0) - (x.updatedAt || 0));
   const lastMs = agentSessions[0]?.updatedAt;
-  const ageMs = lastMs ? Date.now() - lastMs : Infinity;
-  const kinds = agentSessions.reduce<Record<string, number>>((acc, s) => {
-    const k = s.kind || "unknown";
-    acc[k] = (acc[k] || 0) + 1;
-    return acc;
-  }, {});
-  const kindStr = Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(" · ") || "no sessions";
   const agentCrons = crons.filter((c) => c.agentId === a.id);
-  const activeCron = agentCrons.find((c) => c.enabled);
+  const runningCron = agentCrons.find((c) => c.state?.runningAtMs);
+  const runningTask = tasks.find((t) => t.agentId === a.id && t.status === "running");
+  const activity = busy.includes(a.id) ? "Replying in chat…"
+    : runningCron ? `Running “${runningCron.name}”`
+    : runningTask ? cleanTaskTitle(runningTask) : "";
   return {
     id: a.id,
     name: a.identityName || a.id,
     emoji: a.identityEmoji || null,
     color: AGENT_COLORS[h % AGENT_COLORS.length],
-    status: ageMs < 5 * 60 * 1000 ? "running" : "idle",
-    task: activeCron ? `⏱ ${activeCron.name}` : kindStr,
+    status: activity ? "running" : "idle",
+    task: activity,
     model: (a.model || "").replace(/^[^/]+\//, "") || "local",
     modelProvider: (a.model || "").split("/")[0] || "local",
     last: relTime(lastMs),
@@ -45,24 +44,49 @@ function adaptAgent(a: RawAgent, sessions: Session[], crons: CronJob[]): Agent {
   };
 }
 
-const TASK_COL: Record<string, string> = { running: "In Progress", queued: "Pending", succeeded: "Completed", failed: "Completed", cancelled: "Waiting", timed_out: "Completed", lost: "Completed" };
-const TASK_PRIO: Record<string, string> = { failed: "High", timed_out: "High", running: "High", queued: "Normal", succeeded: "Low", cancelled: "Low" };
+const TASK_STATUS: Record<string, TaskStatus> = {
+  running: "running", queued: "queued", succeeded: "succeeded",
+  failed: "failed", timed_out: "failed", lost: "failed", cancelled: "cancelled",
+};
+const TASK_KIND: Record<string, string> = { image_generation: "Image generation" };
+const RUNTIME_KIND: Record<string, string> = { cli: "Agent turn", cron: "Cron run", subagent: "Sub-agent", acp: "Coding agent" };
+
+// CLI tasks carry a "[Tue 2026-10-13 14:44 GMT+2] " stamp; the time is shown separately
+const stripStamp = (text?: string) => text?.replace(/^\[[^\]]*\d{4}-\d{2}-\d{2}[^\]]*\]\s*/, "") ?? "";
+function cleanTaskTitle(t: RawTask) {
+  return t.label || stripStamp(t.task) || t.taskId;
+}
+
+// "agent:main:cron:<job>:run:<run>" / "agent:main:task-…" / "agent:main:jarvisapp-…"
+function taskOrigin(key?: string): TaskOrigin | null {
+  if (!key) return null;
+  const parts = key.split(":");
+  const cron = parts.indexOf("cron");
+  if (cron >= 0 && parts[cron + 1]) return { type: "cron", jobId: parts[cron + 1], runId: parts[parts.indexOf("run") + 1] || undefined };
+  const tail = parts.slice(2).join(":");
+  if (tail.startsWith("task-")) return { type: "task", sessionKey: key };
+  if (tail.startsWith("jarvisapp")) return { type: "chat", sessionKey: key };
+  return { type: "session", sessionKey: key };
+}
 
 function adaptTask(t: RawTask): Task {
-  const due = t.endedAt ? new Date(t.endedAt).toLocaleDateString("en", { month: "short", day: "numeric" })
-    : t.status === "running" ? "Running" : "Queued";
+  const num = (v?: number | string) => (v == null || v === "" ? undefined : Number(v));
+  const prompt = stripStamp(t.task);
   return {
     id: t.taskId,
-    // CLI tasks carry a "[Tue 2026-10-13 14:44 GMT+2] " stamp; the time is shown separately
-    title: t.label || t.task?.replace(/^\[[^\]]*\d{4}-\d{2}-\d{2}[^\]]*\]\s*/, "") || t.taskId,
+    title: cleanTaskTitle(t),
+    prompt,
     agent: t.agentId || "Agent",
-    color: t.status === "failed" ? "amber" : "blue",
-    priority: TASK_PRIO[t.status] || "Normal",
-    due,
-    col: TASK_COL[t.status] || "Pending",
-    ...(t.status === "running" || t.status === "succeeded" ? { prog: t.status === "succeeded" ? 100 : 50 } : {}),
-    ...(t.error ? { block: t.error } : {}),
-    ts: t.lastEventAt || t.endedAt || t.createdAt,
+    status: TASK_STATUS[t.status] || "queued",
+    rawStatus: t.status,
+    kind: TASK_KIND[t.taskKind ?? ""] || RUNTIME_KIND[t.runtime ?? ""] || t.taskKind || t.runtime || "Task",
+    runtime: t.runtime || "",
+    ts: num(t.lastEventAt) ?? num(t.endedAt) ?? num(t.createdAt),
+    createdAt: num(t.createdAt), startedAt: num(t.startedAt), endedAt: num(t.endedAt),
+    error: t.error || (t.status === "timed_out" ? "Timed out" : t.status === "lost" ? "Lost (the process went away)" : undefined),
+    result: t.terminalSummary || t.progressSummary,
+    deliveryStatus: t.deliveryStatus,
+    origin: taskOrigin(t.requesterSessionKey),
   };
 }
 
@@ -108,9 +132,11 @@ export function useData(): DashboardData {
 
   const sessions = (sessionsQ.data as { sessions?: Session[] } | undefined)?.sessions ?? [];
   const crons = (cronQ.data as { jobs?: CronJob[] } | undefined)?.jobs ?? [];
+  const rawTasks = (tasksQ.data as { tasks?: RawTask[] } | undefined)?.tasks ?? [];
+  const agentsData = agentsQ.data as { agents?: RawAgent[]; busy?: string[] } | undefined;
   return {
-    agents: ((agentsQ.data as { agents?: RawAgent[] } | undefined)?.agents ?? []).map((a) => adaptAgent(a, sessions, crons)),
-    tasks: ((tasksQ.data as { tasks?: RawTask[] } | undefined)?.tasks ?? []).map(adaptTask),
+    agents: (agentsData?.agents ?? []).map((a) => adaptAgent(a, sessions, crons, agentsData?.busy ?? [], rawTasks)),
+    tasks: rawTasks.map(adaptTask),
     models: ((modelsQ.data as { models?: RawModel[] } | undefined)?.models ?? []).map(adaptModel),
     sessions,
     crons,
@@ -162,6 +188,26 @@ export function useDigest() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["digest"] }),
   });
   return { ...query, regenerate };
+}
+
+export const useCronRuns = (id: string | undefined, enabled: boolean) =>
+  useQuery({
+    queryKey: ["cronRuns", id],
+    queryFn: () => apiGet<{ entries: CronRun[] }>(`/api/cron/runs?id=${encodeURIComponent(id!)}`),
+    enabled: enabled && !!id,
+    staleTime: 15000,
+  });
+
+export function useCronAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; action: "run" | "enable" | "disable" | "model"; model?: string }) =>
+      apiPost<{ ok: true; output: string }>("/api/cron/action", v),
+    onSuccess: (_d, v) => {
+      ["cron", "agents"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      qc.invalidateQueries({ queryKey: ["cronRuns", v.id] });
+    },
+  });
 }
 
 export const useMarket = () =>
