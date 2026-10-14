@@ -72,7 +72,7 @@ const tools = [
     handler: () => get("/api/models") },
   { name: "get_system_status", description: "Get macOS system stats (CPU, RAM, disk, battery, uptime, network)", inputSchema: noArgs,
     handler: () => get("/api/system") },
-  { name: "get_market_data", description: "Get simulated market data for paper trading", inputSchema: noArgs,
+  { name: "get_market_data", description: "Get current DAX 40 and NASDAQ Composite prices (Yahoo Finance) with 6 months of daily closes, for paper trading", inputSchema: noArgs,
     handler: () => get("/api/market") },
   {
     name: "get_files",

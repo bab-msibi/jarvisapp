@@ -72,7 +72,7 @@ Requests that arrive through Cloudflare Tunnel (identified by Cloudflare's `cf-c
 | `/api/files/reveal` | POST | `{ id }` — selects the file in Finder. Local requests only |
 | `/api/files/thumb` | GET | JPEG thumbnail for an image, PDF or video `id` (sips / Quick Look, cached in `~/Library/Caches/ai.jarvis/thumbs`) |
 | `/api/files/upload` | PUT | Raw file body; `folder` (Workspace/Downloads/Desktop/Documents) and `name`. Max 100 MB, never overwrites |
-| `/api/market` | GET | Simulated market data (paper trading) |
+| `/api/market` | GET | DAX 40 (`^GDAXI`) and NASDAQ Composite (`^IXIC`) from Yahoo Finance: price, day change/high/low, open/closed, 6 months of daily closes. Cached 60s; if Yahoo fails the last good data is returned with `stale: true` |
 | `/api/mcp` | GET | Claude MCP install status and config |
 | `/api/devices` | GET | Device whitelist |
 | `/api/exec` | POST | `{ command }` → runs in a login shell; working directory persists |
