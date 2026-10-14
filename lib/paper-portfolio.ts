@@ -1,19 +1,29 @@
 // Paper-trading portfolio, kept in this browser's localStorage and valued against /api/market
+// (real DAX / NASDAQ prices). Index points are treated as dollars: one unit of DAX costs its level.
 import type { MarketResponse } from "@/lib/types";
 
 export type Market = "dax" | "nasdaq";
 export type Side = "BUY" | "SELL";
 export interface Position { market: Market; name: string; qty: number; avgPrice: number }
 export interface Trade { side: Side; market: Market; name: string; qty: number; price: number; cost: number; ts: number }
-export interface Portfolio { balance: number; positions: Position[]; trades: Trade[] }
+export interface Portfolio {
+  balance: number; positions: Position[]; trades: Trade[];
+  /** "real" once the portfolio trades on real prices; older portfolios were built on the old simulated feed */
+  priceSource?: "real";
+}
 
 const PORTFOLIO_KEY = "ac_trading_portfolio";
 export const INITIAL_BALANCE = 100000;
 
+export const freshPortfolio = (): Portfolio => ({ balance: INITIAL_BALANCE, positions: [], trades: [], priceSource: "real" });
+
 export function loadPortfolio(): Portfolio {
-  try { return JSON.parse(localStorage.getItem(PORTFOLIO_KEY) || "null") || { balance: INITIAL_BALANCE, positions: [], trades: [] }; }
-  catch { return { balance: INITIAL_BALANCE, positions: [], trades: [] }; }
+  try { return JSON.parse(localStorage.getItem(PORTFOLIO_KEY) || "null") || freshPortfolio(); }
+  catch { return freshPortfolio(); }
 }
+
+// Positions or trades made against the old simulated prices, whose P&L means nothing on real ones
+export const builtOnSimulatedPrices = (p: Portfolio) => p.priceSource !== "real" && (p.positions.length > 0 || p.trades.length > 0);
 export function savePortfolio(p: Portfolio) { try { localStorage.setItem(PORTFOLIO_KEY, JSON.stringify(p)); } catch {} }
 
 export function valuePortfolio(portfolio: Portfolio, market?: MarketResponse) {

@@ -3,12 +3,12 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import type { ScreenProps } from "@/lib/nav";
 import { useMarket } from "@/lib/queries";
-import { INITIAL_BALANCE, loadPortfolio, savePortfolio, valuePortfolio, type Market, type Portfolio, type Side } from "@/lib/paper-portfolio";
+import { builtOnSimulatedPrices, freshPortfolio, loadPortfolio, savePortfolio, valuePortfolio, type Market, type Portfolio, type Side } from "@/lib/paper-portfolio";
 import type { MarketResponse, MarketSeries } from "@/lib/types";
 
 type SignalName = "BUY" | "SELL" | "HOLD" | "NEUTRAL";
 interface Signals { signal: SignalName; rsi: number | null; ma20: number | null; ma50: number | null }
-interface Alert { id: number; market: Market; name: string; direction: "above" | "below"; price: number; triggered: boolean }
+interface Alert { id: number; market: Market; name: string; direction: "above" | "below"; price: number; triggered: boolean; real?: true }
 
 // ── Signal math ──────────────────────────────────────────────────────────────
 function calcRSI(prices: number[], period = 14) {
@@ -94,6 +94,10 @@ function MarketCard({ data, sig, onTrade }: { data?: MarketSeries; sig: Signals 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
         <div>
           <div style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 600, letterSpacing: 0.3, marginBottom: 3 }}>{data.name}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "var(--text-ghost)", marginBottom: 3 }}>
+            <span style={{ width: 6, height: 6, borderRadius: 3, background: data.open ? "var(--ok)" : "var(--text-ghost)" }} />
+            {data.open ? "Open" : "Closed"} · {new Date(data.asOf).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}{data.currency ? ` · ${data.currency}` : ""}
+          </div>
           <div style={{ fontSize: 22, fontWeight: 760, letterSpacing: -0.5 }}>{fmtNum(data.current, 0)}</div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -249,7 +253,9 @@ export function Trading(_: ScreenProps) {
 
   const execTrade = (side: Side, market: Market, name: string, qty: number, price: number) => {
     setPortfolio(prev => {
-      const p: Portfolio = { ...prev, positions: [...prev.positions], trades: [...prev.trades] };
+      // An old portfolio that never traded becomes a real-price one with its first trade
+      const p: Portfolio = { ...prev, positions: [...prev.positions], trades: [...prev.trades],
+        priceSource: prev.priceSource ?? (builtOnSimulatedPrices(prev) ? undefined : "real") };
       const cost = qty * price;
       if (side === "BUY") {
         p.balance -= cost;
@@ -281,7 +287,7 @@ export function Trading(_: ScreenProps) {
   };
 
   const addAlert = (market: Market, name: string, direction: Alert["direction"], price: number) => {
-    const newAlerts = [...alerts, { id: Date.now(), market, name, direction, price, triggered: false }];
+    const newAlerts = [...alerts, { id: Date.now(), market, name, direction, price, triggered: false, real: true as const }];
     setAlerts(newAlerts);
     saveAlerts(newAlerts);
     setAlertModal(null);
@@ -295,11 +301,19 @@ export function Trading(_: ScreenProps) {
   };
 
   const resetPortfolio = () => {
-    const p: Portfolio = { balance: INITIAL_BALANCE, positions: [], trades: [] };
+    const p = freshPortfolio();
     savePortfolio(p);
     setPortfolio(p);
     showToast("Portfolio reset to $100,000");
   };
+
+  // Start over after the switch from simulated to real prices: old positions and alerts were set at made-up levels
+  const startFresh = () => {
+    resetPortfolio();
+    setAlerts([]);
+    saveAlerts([]);
+  };
+  const simulatedLeftovers = builtOnSimulatedPrices(portfolio) || alerts.some(a => !a.real);
 
   // Portfolio value
   const { positions: positionsWithPnl, positionValue: totalPositionValue, netWorth, totalReturn } = valuePortfolio(portfolio, marketData);
@@ -316,7 +330,7 @@ export function Trading(_: ScreenProps) {
       <div style={{ padding: "14px 18px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div style={{ fontSize: 22, fontWeight: 760, letterSpacing: -0.5 }}>Trading</div>
-          <div style={{ fontSize: 12, color: "var(--text-faint)" }}>DAX 40 · NASDAQ · Paper Mode</div>
+          <div style={{ fontSize: 12, color: "var(--text-faint)" }}>Paper trading on real DAX & NASDAQ prices</div>
         </div>
         <button className="tap" onClick={fetchMarket} style={{ background: "var(--surface)", border: "none", borderRadius: 12, padding: "8px 14px", fontSize: 12, color: "var(--text-dim)", cursor: "pointer", fontWeight: 680 }}>
           {loading ? "…" : "Refresh"}
@@ -337,6 +351,19 @@ export function Trading(_: ScreenProps) {
         {activeTab === "markets" && (
           <div>
             {error && <div style={{ color: "var(--err)", fontSize: 13, marginBottom: 12, padding: "10px 14px", background: "var(--err-soft)", borderRadius: 12 }}>{error}</div>}
+            {marketData?.stale && (
+              <div style={{ color: "var(--warn)", fontSize: 12.5, marginBottom: 12, padding: "10px 14px", background: "var(--warn-soft)", borderRadius: 12, lineHeight: 1.45 }}>
+                Showing prices from {new Date(marketData.updatedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}: the latest update failed ({marketData.error}).
+              </div>
+            )}
+            {simulatedLeftovers && (
+              <div style={{ fontSize: 12.5, marginBottom: 12, padding: "12px 14px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, lineHeight: 1.45, color: "var(--text-dim)" }}>
+                Your positions and alerts were made on the old simulated prices, so their profit and loss doesn&apos;t mean anything now.
+                <button className="tap" onClick={startFresh} style={{ display: "block", marginTop: 8, padding: "7px 12px", borderRadius: 9, background: "var(--accent)", color: "#fff", fontSize: 12.5, fontWeight: 680 }}>
+                  Start fresh with $100,000
+                </button>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
               <MarketCard data={marketData?.dax} sig={daxSig} onTrade={() => setTradeModal("dax")} />
               <MarketCard data={marketData?.nasdaq} sig={nasdaqSig} onTrade={() => setTradeModal("nasdaq")} />
@@ -377,6 +404,10 @@ export function Trading(_: ScreenProps) {
                 </div>
               </div>
             ))}
+            <div style={{ fontSize: 11.5, color: "var(--text-ghost)", lineHeight: 1.5, padding: "2px 4px 8px" }}>
+              Prices from {marketData?.source ?? "Yahoo Finance"}, may be delayed. Paper money only: index points count as dollars.
+              Signals are simple RSI and moving-average rules on daily closes, for practice, not investment advice.
+            </div>
           </div>
         )}
 

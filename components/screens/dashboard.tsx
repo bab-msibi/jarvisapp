@@ -215,7 +215,7 @@ function DigestCard() {
   );
 }
 
-// Paper portfolio from this browser's Trade tab, valued at the (simulated) market prices
+// Paper portfolio from this browser's Trade tab, valued at current DAX / NASDAQ prices
 function PaperTile({ nav }: { nav: Nav }) {
   const { data: market } = useMarket();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
@@ -233,7 +233,7 @@ function PaperTile({ nav }: { nav: Nav }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 650 }}>Paper portfolio</div>
           <div className="clip" style={{ fontSize: 11.5, color: "var(--text-ghost)", marginTop: 1 }}>
-            {positions.length ? `${positions.length} position${positions.length === 1 ? "" : "s"}` : "No open positions"} · simulated prices
+            {positions.length ? `${positions.length} position${positions.length === 1 ? "" : "s"}` : "No open positions"} · paper money
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
