@@ -2,6 +2,7 @@
 
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { apiGet, apiPost, relTime } from "./api";
+import type { CronRun } from "@/lib/server/cron";
 import type {
   Agent, CronJob, DeviceView, DigestResponse, ExecResult, FilesResponse, GatewayHealth, MarketResponse, McpStatus, Model, ModelConfig,
   OpenClawStatus, RawAgent, RawModel, RawTask, Session, SystemStats, Task, TunnelStatus, Whoami,
@@ -11,26 +12,24 @@ import type {
 
 const AGENT_COLORS = ["blue", "purple", "cyan", "green", "amber", "pink", "slate"];
 
-function adaptAgent(a: RawAgent, sessions: Session[], crons: CronJob[]): Agent {
+// Running = a chat reply in progress, an OpenClaw task running, or a cron job mid-run (all live signals)
+function adaptAgent(a: RawAgent, sessions: Session[], crons: CronJob[], busy: string[], tasks: RawTask[]): Agent {
   const h = (a.id || "").split("").reduce((s, c) => s + c.charCodeAt(0), 0);
   const agentSessions = sessions.filter((s) => s.agentId === a.id).sort((x, y) => (y.updatedAt || 0) - (x.updatedAt || 0));
   const lastMs = agentSessions[0]?.updatedAt;
-  const ageMs = lastMs ? Date.now() - lastMs : Infinity;
-  const kinds = agentSessions.reduce<Record<string, number>>((acc, s) => {
-    const k = s.kind || "unknown";
-    acc[k] = (acc[k] || 0) + 1;
-    return acc;
-  }, {});
-  const kindStr = Object.entries(kinds).map(([k, n]) => `${n} ${k}`).join(" · ") || "no sessions";
   const agentCrons = crons.filter((c) => c.agentId === a.id);
-  const activeCron = agentCrons.find((c) => c.enabled);
+  const runningCron = agentCrons.find((c) => c.state?.runningAtMs);
+  const runningTask = tasks.find((t) => t.agentId === a.id && t.status === "running");
+  const activity = busy.includes(a.id) ? "Replying in chat…"
+    : runningCron ? `Running “${runningCron.name}”`
+    : runningTask ? cleanTaskTitle(runningTask) : "";
   return {
     id: a.id,
     name: a.identityName || a.id,
     emoji: a.identityEmoji || null,
     color: AGENT_COLORS[h % AGENT_COLORS.length],
-    status: ageMs < 5 * 60 * 1000 ? "running" : "idle",
-    task: activeCron ? `⏱ ${activeCron.name}` : kindStr,
+    status: activity ? "running" : "idle",
+    task: activity,
     model: (a.model || "").replace(/^[^/]+\//, "") || "local",
     modelProvider: (a.model || "").split("/")[0] || "local",
     last: relTime(lastMs),
@@ -48,13 +47,17 @@ function adaptAgent(a: RawAgent, sessions: Session[], crons: CronJob[]): Agent {
 const TASK_COL: Record<string, string> = { running: "In Progress", queued: "Pending", succeeded: "Completed", failed: "Completed", cancelled: "Waiting", timed_out: "Completed", lost: "Completed" };
 const TASK_PRIO: Record<string, string> = { failed: "High", timed_out: "High", running: "High", queued: "Normal", succeeded: "Low", cancelled: "Low" };
 
+// CLI tasks carry a "[Tue 2026-10-13 14:44 GMT+2] " stamp; the time is shown separately
+function cleanTaskTitle(t: RawTask) {
+  return t.label || t.task?.replace(/^\[[^\]]*\d{4}-\d{2}-\d{2}[^\]]*\]\s*/, "") || t.taskId;
+}
+
 function adaptTask(t: RawTask): Task {
   const due = t.endedAt ? new Date(t.endedAt).toLocaleDateString("en", { month: "short", day: "numeric" })
     : t.status === "running" ? "Running" : "Queued";
   return {
     id: t.taskId,
-    // CLI tasks carry a "[Tue 2026-10-13 14:44 GMT+2] " stamp; the time is shown separately
-    title: t.label || t.task?.replace(/^\[[^\]]*\d{4}-\d{2}-\d{2}[^\]]*\]\s*/, "") || t.taskId,
+    title: cleanTaskTitle(t),
     agent: t.agentId || "Agent",
     color: t.status === "failed" ? "amber" : "blue",
     priority: TASK_PRIO[t.status] || "Normal",
@@ -108,9 +111,11 @@ export function useData(): DashboardData {
 
   const sessions = (sessionsQ.data as { sessions?: Session[] } | undefined)?.sessions ?? [];
   const crons = (cronQ.data as { jobs?: CronJob[] } | undefined)?.jobs ?? [];
+  const rawTasks = (tasksQ.data as { tasks?: RawTask[] } | undefined)?.tasks ?? [];
+  const agentsData = agentsQ.data as { agents?: RawAgent[]; busy?: string[] } | undefined;
   return {
-    agents: ((agentsQ.data as { agents?: RawAgent[] } | undefined)?.agents ?? []).map((a) => adaptAgent(a, sessions, crons)),
-    tasks: ((tasksQ.data as { tasks?: RawTask[] } | undefined)?.tasks ?? []).map(adaptTask),
+    agents: (agentsData?.agents ?? []).map((a) => adaptAgent(a, sessions, crons, agentsData?.busy ?? [], rawTasks)),
+    tasks: rawTasks.map(adaptTask),
     models: ((modelsQ.data as { models?: RawModel[] } | undefined)?.models ?? []).map(adaptModel),
     sessions,
     crons,
@@ -162,6 +167,26 @@ export function useDigest() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["digest"] }),
   });
   return { ...query, regenerate };
+}
+
+export const useCronRuns = (id: string | undefined, enabled: boolean) =>
+  useQuery({
+    queryKey: ["cronRuns", id],
+    queryFn: () => apiGet<{ entries: CronRun[] }>(`/api/cron/runs?id=${encodeURIComponent(id!)}`),
+    enabled: enabled && !!id,
+    staleTime: 15000,
+  });
+
+export function useCronAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; action: "run" | "enable" | "disable" | "model"; model?: string }) =>
+      apiPost<{ ok: true; output: string }>("/api/cron/action", v),
+    onSuccess: (_d, v) => {
+      ["cron", "agents"].forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+      qc.invalidateQueries({ queryKey: ["cronRuns", v.id] });
+    },
+  });
 }
 
 export const useMarket = () =>

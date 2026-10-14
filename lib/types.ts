@@ -48,7 +48,8 @@ export interface CronJob {
   id?: string; name: string; agentId?: string; enabled?: boolean;
   schedule?: { expr?: string; tz?: string };
   delivery?: { mode?: string; channel?: string };
-  state?: { lastRunAtMs?: number; nextRunAtMs?: number; lastRunStatus?: string; consecutiveErrors?: number; lastDeliveryStatus?: string };
+  state?: { lastRunAtMs?: number; nextRunAtMs?: number; runningAtMs?: number; lastRunStatus?: string; consecutiveErrors?: number; lastDeliveryStatus?: string; lastDurationMs?: number };
+  payload?: { kind?: string; message?: string; model?: string };
 }
 export interface RawTask {
   taskId: string; status: string; label?: string; task?: string; agentId?: string; endedAt?: number; error?: string;
@@ -58,6 +59,7 @@ export interface RawTask {
 // UI-side shapes (adapted from the raw data)
 export interface Agent {
   id: string; name: string; emoji: string | null; color: string; status: "running" | "idle";
+  /** What it's doing right now ("" when idle) */
   task: string; model: string; modelProvider: string; last: string; lastMs?: number;
   sessionCount: number; cronCount: number; bindings: number; isDefault: boolean; workspace?: string;
   crons: CronJob[]; sessions: Session[];

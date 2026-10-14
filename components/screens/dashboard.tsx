@@ -8,8 +8,9 @@ import { relTime } from "@/lib/api";
 import type { Nav, ScreenProps } from "@/lib/nav";
 import { useNotifications } from "@/lib/notifications";
 import { loadPortfolio, valuePortfolio, type Portfolio } from "@/lib/paper-portfolio";
+import { contextPct, fmtTokens, sessionTitle, sessionTokens } from "@/lib/sessions";
 import { useData, useDigest, useGateway, useMarket, useModelConfig, useTunnel } from "@/lib/queries";
-import type { CronJob, Session, SystemStats } from "@/lib/types";
+import type { CronJob, SystemStats } from "@/lib/types";
 
 const TONE_COLOR: Record<string, string> = { info: "var(--accent)", ok: "var(--ok)", purple: "var(--purple)", cyan: "var(--cyan)", warn: "var(--warn)", err: "var(--err)", neutral: "var(--text-faint)" };
 
@@ -25,7 +26,6 @@ function untilTime(ms?: number) {
   return `in ${Math.floor(s / 86400)}d`;
 }
 
-const fmtTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n));
 
 export function StatTile({ icon, label, value, tone = "info", spark, sub }: {
   icon: IconName; label: string; value: number | string; tone?: Tone; spark?: number[]; sub?: string;
@@ -245,17 +245,6 @@ function PaperTile({ nav }: { nav: Nav }) {
   );
 }
 
-const SESSION_KIND: Record<string, string> = { direct: "Direct chat", cron: "Cron job", group: "Discord group", "spawn-child": "Sub-agent" };
-
-// "agent:main:jarvisapp-mv6o9dfm" → "Jarvis app"; "agent:main:main" → "Main"
-function sessionTitle(s: Session) {
-  const kind = SESSION_KIND[s.kind ?? ""] || s.kind || "Session";
-  const tail = s.key?.split(":").slice(2).join(":") || "";
-  if (tail.startsWith("jarvisapp")) return "Jarvis app chat";
-  if (tail === "main") return `${kind} · main`;
-  if (tail.startsWith("cron")) return "Cron run";
-  return kind;
-}
 
 export function Dashboard({ nav }: ScreenProps) {
   const d = useData();
@@ -430,8 +419,8 @@ export function Dashboard({ nav }: ScreenProps) {
             <Section title="Recent Sessions" />
             <div className="card" style={{ padding: "4px 14px" }}>
               {recentSessions.map((s, i) => {
-                const total = s.totalTokens ?? ((s.inputTokens ?? 0) + (s.outputTokens ?? 0));
-                const ctxPct = s.contextTokens && s.inputTokens ? Math.min(Math.round((s.inputTokens / s.contextTokens) * 100), 100) : null;
+                const total = sessionTokens(s);
+                const ctxPct = contextPct(s);
                 return (
                   <button key={s.sessionId || s.key} className="tap" onClick={() => s.agentId && nav.push("agentChat", { id: s.agentId })}
                     style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", width: "100%", minWidth: 0, textAlign: "left",
