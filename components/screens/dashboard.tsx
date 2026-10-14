@@ -253,6 +253,7 @@ export function Dashboard({ nav }: ScreenProps) {
   const [uploading, setUploading] = useState(false);
 
   const runningAgents = agents.filter(a => a.status === "running").length;
+  const defaultAgent = agents.find(a => a.isDefault) || agents[0];
   const runningTasks = tasks.filter(t => t.status === "running").length;
   const failedTasks = tasks.filter(t => t.status === "failed").length;
   const activeModels = models.filter(m => m.status === "active" || m.status === "loaded").length;
@@ -276,7 +277,7 @@ export function Dashboard({ nav }: ScreenProps) {
   ].sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0)).slice(0, 6);
 
   const quicks: { icon: IconName; label: string; tone: Tone; go: () => void }[] = [
-    { icon: "plus", label: "Create Agent", tone: "info", go: () => nav.push("createAgent") },
+    { icon: "message", label: "Chat", tone: "info", go: () => (defaultAgent ? nav.push("agentChat", { id: defaultAgent.id }) : nav.go("agents")) },
     { icon: "columns", label: "New Task", tone: "purple", go: () => nav.push("createTask") },
     { icon: "upload", label: "Upload File", tone: "cyan", go: () => setUploading(true) },
     { icon: "play", label: "Launch Agent", tone: "ok", go: () => nav.go("agents") },

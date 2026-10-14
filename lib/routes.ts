@@ -12,14 +12,14 @@ const TAB_PATH: Record<TabId, string> = {
 };
 
 const SCREEN_SLUG: Record<OverlayScreen, string> = {
-  agentDetail: "agent", agentChat: "chat", multiAgent: "multi-agent", terminal: "terminal", models: "models",
-  openclaw: "openclaw", mcp: "claude-mcp", devices: "devices", workflow: "workflow", notifications: "notifications",
-  security: "security", analytics: "analytics", createAgent: "new-agent", createTask: "new-task", taskDetail: "task",
-  fileDetail: "file", upload: "upload", profile: "profile", defaultModel: "default-model",
+  agentDetail: "agent", agentChat: "chat", terminal: "terminal",
+  openclaw: "openclaw", mcp: "claude-mcp", devices: "devices", notifications: "notifications",
+  security: "security", analytics: "analytics", createTask: "new-task", taskDetail: "task",
+  profile: "profile", defaultModel: "default-model",
 };
 
 // Screens about a single item carry its id as the next path segment
-const TAKES_ID = new Set<OverlayScreen>(["agentDetail", "agentChat", "taskDetail", "fileDetail"]);
+const TAKES_ID = new Set<OverlayScreen>(["agentDetail", "agentChat", "taskDetail"]);
 
 const TAB_BY_PATH = Object.fromEntries(Object.entries(TAB_PATH).map(([t, p]) => [p, t as TabId]));
 const SCREEN_BY_SLUG = Object.fromEntries(Object.entries(SCREEN_SLUG).map(([s, slug]) => [slug, s as OverlayScreen]));

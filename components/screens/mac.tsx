@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ConnectionBadge, OfflineBanner } from "@/components/ui/connection";
 import { Bar, Btn, Dot, GhostBtn, Header, Icon, Pill, Row, Section, Sheet, type IconName, type Tone } from "@/components/ui/primitives";
 import type { ScreenProps } from "@/lib/nav";
-import { useSystem } from "@/lib/queries";
+import { useGateway, useSystem } from "@/lib/queries";
 
 interface Control { icon: IconName; label: string; tone: Tone; kill?: boolean }
 
@@ -27,6 +27,8 @@ function MacMetricRow({ icon, label, pct, color, sub }: { icon: IconName; label:
 
 export function Mac({ nav }: ScreenProps) {
   const { data: sys, isPending: loading, refetch } = useSystem();
+  const { data: gw, isError: gwDown } = useGateway();
+  const gatewaySub = gwDown ? "Gateway not responding" : !gw ? "Checking…" : gw.ok ? `Gateway ${gw.degraded ? "degraded" : "OK"} · ${gw.latencyMs}ms` : "Gateway reports a problem";
   const refresh = () => { void refetch(); };
   const [sheet, setSheet] = useState<Control | null>(null);
 
@@ -155,8 +157,8 @@ export function Mac({ nav }: ScreenProps) {
         </div>
         <div className="card" style={{ padding: "2px 14px", marginBottom: 14 }}>
           <Row icon="terminal" iconColor="var(--cyan)" title="Terminal" sub="Secure shell access" chev onClick={() => nav.push("terminal")} />
-          <Row icon="brain" iconColor="var(--purple)" title="Local LLM Models" sub={sys ? `${sys.gpus?.join(", ") || "–"}` : "…"} chev onClick={() => nav.push("models")} />
-          <Row icon="flow" iconColor="var(--accent)" title="OpenClaw Integration" sub="Connected · gateway active" chev last onClick={() => nav.push("openclaw")} />
+          <Row icon="brain" iconColor="var(--purple)" title="Models" sub="Choose the default model" chev onClick={() => nav.push("defaultModel")} />
+          <Row icon="flow" iconColor="var(--accent)" title="OpenClaw Integration" sub={gatewaySub} chev last onClick={() => nav.push("openclaw")} />
         </div>
         <button className="tap" onClick={() => setSheet({ label: "Emergency Stop", icon: "power", tone: "err", kill: true })} style={{ width: "100%", padding: 15, borderRadius: 16, background: "var(--err-soft)", color: "var(--err)", display: "flex", alignItems: "center", justifyContent: "center", gap: 9, fontWeight: 660, fontSize: 14.5, border: "1px solid color-mix(in oklab, var(--err) 30%, transparent)" }}>
           <Icon name="power" size={19} stroke={2.2} />Emergency Kill Switch
